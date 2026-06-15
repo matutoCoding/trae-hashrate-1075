@@ -53,8 +53,9 @@ const RefiningPage = {
 
     renderRefiningTable() {
         const records = Storage.get('refiningRecords') || [];
+        const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        if (records.length === 0) {
+        if (sorted.length === 0) {
             return `<div class="empty-state"><div class="empty-state-icon">🏺</div><div class="empty-state-text">暂无精炼记录</div></div>`;
         }
 
@@ -64,13 +65,12 @@ const RefiningPage = {
                     <thead>
                         <tr>
                             <th>批次号</th>
+                            <th>来源批次</th>
                             <th>毛油重量(kg)</th>
                             <th>精炼油(kg)</th>
                             <th>得率(%)</th>
                             <th>脱胶</th>
                             <th>脱酸</th>
-                            <th>脱色</th>
-                            <th>脱臭</th>
                             <th>操作人</th>
                             <th>日期</th>
                             <th>状态</th>
@@ -78,28 +78,30 @@ const RefiningPage = {
                         </tr>
                     </thead>
                     <tbody>
-                        ${records.map(item => `
-                            <tr>
-                                <td>${item.batchNo}</td>
-                                <td>${Utils.formatNumber(item.crudeOilWeight, 1)}</td>
-                                <td style="font-weight: 600; color: #2196f3;">${Utils.formatNumber(item.refinedOilWeight, 1)}</td>
-                                <td style="font-weight: 600; color: #689f38;">${Utils.formatNumber(item.refiningRate, 2)}</td>
-                                <td>${item.degumming ? '✓' : '-'}</td>
-                                <td>${item.deacidification ? '✓' : '-'}</td>
-                                <td>${item.decolorization ? '✓' : '-'}</td>
-                                <td>${item.deodorization ? '✓' : '-'}</td>
-                                <td>${Utils.escapeHtml(item.operator || '-')}</td>
-                                <td>${Utils.formatDate(item.createdAt)}</td>
-                                <td>${this.getStatusBadge(item.status)}</td>
-                                <td>
-                                    <div class="action-buttons">
-                                        <button class="btn btn-outline btn-sm" onclick="RefiningPage.viewRefining('${item.id}')">查看</button>
-                                        <button class="btn btn-secondary btn-sm" onclick="RefiningPage.editRefining('${item.id}')">编辑</button>
-                                        <button class="btn btn-danger btn-sm" onclick="RefiningPage.deleteRefining('${item.id}')">删除</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
+                        ${sorted.map(item => {
+                            const filtering = item.filteringId ? Storage.findById('filteringRecords', item.filteringId) : null;
+                            return `
+                                <tr>
+                                    <td>${item.batchNo}</td>
+                                    <td>${filtering ? filtering.batchNo : '直接精炼'}</td>
+                                    <td>${Utils.formatNumber(item.crudeOilWeight, 1)}</td>
+                                    <td style="font-weight: 600; color: #2196f3;">${Utils.formatNumber(item.refinedOilWeight, 1)}</td>
+                                    <td style="font-weight: 600; color: #689f38;">${Utils.formatNumber(item.refiningRate, 2)}</td>
+                                    <td>${item.degumming ? '✓' : '-'}</td>
+                                    <td>${item.deacidification ? '✓' : '-'}</td>
+                                    <td>${Utils.escapeHtml(item.operator || '-')}</td>
+                                    <td>${Utils.formatDate(item.createdAt)}</td>
+                                    <td>${this.getStatusBadge(item.status)}</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn btn-outline btn-sm" onclick="RefiningPage.viewRefining('${item.id}')">查看</button>
+                                            <button class="btn btn-secondary btn-sm" onclick="RefiningPage.editRefining('${item.id}')">编辑</button>
+                                            <button class="btn btn-danger btn-sm" onclick="RefiningPage.deleteRefining('${item.id}')">删除</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -108,8 +110,9 @@ const RefiningPage = {
 
     renderBottlingTable() {
         const records = Storage.get('bottlingRecords') || [];
+        const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        if (records.length === 0) {
+        if (sorted.length === 0) {
             return `<div class="empty-state"><div class="empty-state-icon">🍾</div><div class="empty-state-text">暂无灌装记录</div></div>`;
         }
 
@@ -119,6 +122,7 @@ const RefiningPage = {
                     <thead>
                         <tr>
                             <th>批次号</th>
+                            <th>来源批次</th>
                             <th>油品总量(kg)</th>
                             <th>规格</th>
                             <th>灌装数量(瓶)</th>
@@ -130,25 +134,30 @@ const RefiningPage = {
                         </tr>
                     </thead>
                     <tbody>
-                        ${records.map(item => `
-                            <tr>
-                                <td>${item.batchNo}</td>
-                                <td>${Utils.formatNumber(item.oilWeight, 1)}</td>
-                                <td>${item.bottleSpec}</td>
-                                <td style="font-weight: 600; color: #689f38;">${item.bottleCount}</td>
-                                <td>${Utils.escapeHtml(item.labelType || '-')}</td>
-                                <td>${Utils.escapeHtml(item.operator || '-')}</td>
-                                <td>${Utils.formatDate(item.createdAt)}</td>
-                                <td>${this.getStatusBadge(item.status)}</td>
-                                <td>
-                                    <div class="action-buttons">
-                                        <button class="btn btn-outline btn-sm" onclick="RefiningPage.viewBottling('${item.id}')">查看</button>
-                                        <button class="btn btn-secondary btn-sm" onclick="RefiningPage.editBottling('${item.id}')">编辑</button>
-                                        <button class="btn btn-danger btn-sm" onclick="RefiningPage.deleteBottling('${item.id}')">删除</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
+                        ${sorted.map(item => {
+                            const refining = item.refiningId ? Storage.findById('refiningRecords', item.refiningId) : null;
+                            const product = item.productId ? Storage.findById('products', item.productId) : null;
+                            return `
+                                <tr>
+                                    <td>${item.batchNo}</td>
+                                    <td>${refining ? refining.batchNo : '直接灌装'}</td>
+                                    <td>${Utils.formatNumber(item.oilWeight, 1)}</td>
+                                    <td>${item.bottleSpec}</td>
+                                    <td style="font-weight: 600; color: #689f38;">${item.bottleCount}</td>
+                                    <td>${Utils.escapeHtml(item.labelType || '-')}</td>
+                                    <td>${Utils.escapeHtml(item.operator || '-')}</td>
+                                    <td>${Utils.formatDate(item.createdAt)}</td>
+                                    <td>${this.getStatusBadge(item.status)}</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn btn-outline btn-sm" onclick="RefiningPage.viewBottling('${item.id}')">查看</button>
+                                            <button class="btn btn-secondary btn-sm" onclick="RefiningPage.editBottling('${item.id}')">编辑</button>
+                                            <button class="btn btn-danger btn-sm" onclick="RefiningPage.deleteBottling('${item.id}')">删除</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -202,6 +211,14 @@ const RefiningPage = {
     },
 
     openRefiningModal() {
+        const filteringList = (Storage.get('filteringRecords') || [])
+            .filter(f => f.status === 'completed');
+        const filteringOptions = filteringList.map(f => 
+            `<option value="${f.id}" data-weight="${f.filteredOilWeight}">
+                ${f.batchNo} - ${Utils.formatNumber(f.filteredOilWeight, 1)}kg净油
+            </option>`
+        ).join('');
+
         const content = `
             <form id="refiningForm">
                 <div class="form-row">
@@ -210,17 +227,26 @@ const RefiningPage = {
                         <input type="text" name="batchNo" value="${Utils.generateBatchNo('JL')}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
+                        <label>来源过滤批次</label>
+                        <select id="filteringSelect" name="filteringId" onchange="RefiningPage.onFilteringChange()">
+                            <option value="">直接精炼（无来源）</option>
+                            ${filteringOptions}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
                         <label>毛油重量(kg) *</label>
-                        <input type="number" name="crudeOilWeight" step="0.1" min="0" required oninput="RefiningPage.calcRefiningRate()">
+                        <input type="number" id="refiningCrudeOil" name="crudeOilWeight" step="0.1" min="0" required oninput="RefiningPage.calcRefiningRate()">
+                    </div>
+                    <div class="form-group">
+                        <label>精炼油重量(kg) *</label>
+                        <input type="number" id="refiningRefinedOil" name="refinedOilWeight" step="0.1" min="0" required oninput="RefiningPage.calcRefiningRate()">
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>精炼油重量(kg) *</label>
-                    <input type="number" name="refinedOilWeight" step="0.1" min="0" required oninput="RefiningPage.calcRefiningRate()">
-                </div>
-                <div class="form-group">
                     <label>精炼得率(%)</label>
-                    <input type="text" name="refiningRate" readonly style="background: #f5f5f5; color: #689f38; font-weight: 700;">
+                    <input type="text" id="refiningRate" name="refiningRateDisplay" readonly style="background: #f5f5f5; color: #689f38; font-weight: 700;">
                 </div>
                 <div class="section-title">精炼工艺</div>
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px;">
@@ -270,11 +296,36 @@ const RefiningPage = {
         const form = document.getElementById('refiningForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('refiningForm');
+
             const formData = new FormData(form);
             const crude = parseFloat(formData.get('crudeOilWeight')) || 0;
             const refined = parseFloat(formData.get('refinedOilWeight')) || 0;
+
+            const crudeCheck = Utils.validate.positiveNumber(crude, '毛油重量');
+            if (!crudeCheck.valid) {
+                Utils.showFieldError('refiningCrudeOil', crudeCheck.message);
+                return;
+            }
+
+            const refinedCheck = Utils.validate.positiveNumber(refined, '精炼油重量');
+            if (!refinedCheck.valid) {
+                Utils.showFieldError('refiningRefinedOil', refinedCheck.message);
+                return;
+            }
+
+            const oilCheck = Utils.validate.refinedOil(refined, crude);
+            if (!oilCheck.valid) {
+                Utils.showFieldError('refiningRefinedOil', oilCheck.message);
+                return;
+            }
+            if (oilCheck.warning) {
+                Utils.showFieldError('refiningRefinedOil', oilCheck.warning, 'warning');
+            }
+
             const data = {
                 batchNo: formData.get('batchNo'),
+                filteringId: formData.get('filteringId') || null,
                 crudeOilWeight: crude,
                 refinedOilWeight: refined,
                 refiningRate: crude > 0 ? (refined / crude) * 100 : 0,
@@ -294,14 +345,24 @@ const RefiningPage = {
         });
     },
 
+    onFilteringChange() {
+        const select = document.getElementById('filteringSelect');
+        const option = select.options[select.selectedIndex];
+        const weightInput = document.getElementById('refiningCrudeOil');
+        if (option && option.dataset.weight) {
+            weightInput.value = option.dataset.weight;
+            this.calcRefiningRate();
+        }
+    },
+
     calcRefiningRate() {
         const form = document.getElementById('refiningForm');
         if (!form) return;
         const crude = parseFloat(form.crudeOilWeight.value) || 0;
         const refined = parseFloat(form.refinedOilWeight.value) || 0;
         const rate = crude > 0 ? ((refined / crude) * 100).toFixed(2) : '0.00';
-        if (form.refiningRate) {
-            form.refiningRate.value = rate + '%';
+        if (form.refiningRateDisplay) {
+            form.refiningRateDisplay.value = rate + '%';
         }
     },
 
@@ -309,7 +370,39 @@ const RefiningPage = {
         const item = Storage.findById('refiningRecords', id);
         if (!item) return;
 
+        const chain = Storage.getBatchChain('refiningRecords', id);
+        const filtering = chain.source;
+
+        let sourceHtml = '';
+        if (filtering) {
+            sourceHtml = `
+                <div style="padding: 8px 12px; background: #e8f4fd; border-radius: 6px; cursor: pointer;"
+                     onclick="Utils.hideModal(); App.switchPage('filtering');">
+                    <span style="color: #1976d2; font-weight: 600;">${filtering.batchNo}</span>
+                    <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(filtering.filteredOilWeight || 0, 1)}kg净油</span>
+                    <span style="color: #1976d2; font-size: 12px; margin-left: 8px;">← 来源过滤</span>
+                </div>
+            `;
+        } else {
+            sourceHtml = '<div style="color: #aaa; font-size: 13px;">无来源（直接精炼）</div>';
+        }
+
+        let targetHtml = '';
+        if (chain.target && chain.target.length > 0) {
+            targetHtml = chain.target.map(t => `
+                <div style="padding: 8px 12px; background: #f0f9eb; border-radius: 6px; margin-bottom: 6px; cursor: pointer;"
+                     onclick="Utils.hideModal(); App.switchPage('refining');">
+                    <span style="color: #689f38; font-weight: 600;">${t.batchNo}</span>
+                    <span style="color: #888; margin-left: 8px;">${t.bottleCount || 0}瓶 ${t.bottleSpec || ''}</span>
+                    <span style="color: #689f38; font-size: 12px; margin-left: 8px;">→ 灌装</span>
+                </div>
+            `).join('');
+        } else {
+            targetHtml = '<div style="color: #aaa; font-size: 13px;">暂无后续环节</div>';
+        }
+
         const content = `
+            <div class="section-title">基本信息</div>
             <div class="info-grid">
                 <div class="info-item">
                     <span class="label">批次号</span>
@@ -336,6 +429,7 @@ const RefiningPage = {
                     <span class="value">${Utils.escapeHtml(item.operator || '-')}</span>
                 </div>
             </div>
+
             <div class="section-title" style="margin-top: 20px;">精炼工艺</div>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px;">
                 <div style="padding: 10px; background: ${item.degumming ? '#e8f5e9' : '#f5f5f5'}; border-radius: 6px; text-align: center;">
@@ -355,13 +449,22 @@ const RefiningPage = {
                     <div style="font-size: 12px; color: #666; margin-top: 4px;">脱臭</div>
                 </div>
             </div>
+
+            <div class="section-title" style="margin-top: 20px;">批次流转</div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px; margin-bottom: 12px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📥 来源批次</div>
+                ${sourceHtml}
+            </div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📤 流转去向</div>
+                ${targetHtml}
+            </div>
+
             ${item.remark ? `
-                <div class="form-group">
-                    <label>备注</label>
-                    <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
-                </div>
+                <div class="section-title" style="margin-top: 20px;">备注</div>
+                <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
             ` : ''}
-            <div class="modal-footer">
+            <div class="modal-footer" style="margin-top: 20px;">
                 <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
             </div>
         `;
@@ -373,6 +476,14 @@ const RefiningPage = {
         const item = Storage.findById('refiningRecords', id);
         if (!item) return;
 
+        const filteringList = (Storage.get('filteringRecords') || [])
+            .filter(f => f.status === 'completed' || f.id === item.filteringId);
+        const filteringOptions = filteringList.map(f => 
+            `<option value="${f.id}" ${f.id === item.filteringId ? 'selected' : ''}>
+                ${f.batchNo} - ${Utils.formatNumber(f.filteredOilWeight, 1)}kg净油
+            </option>`
+        ).join('');
+
         const content = `
             <form id="refiningForm">
                 <div class="form-row">
@@ -381,17 +492,26 @@ const RefiningPage = {
                         <input type="text" name="batchNo" value="${item.batchNo}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
+                        <label>来源过滤批次</label>
+                        <select name="filteringId">
+                            <option value="">直接精炼（无来源）</option>
+                            ${filteringOptions}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
                         <label>毛油重量(kg) *</label>
-                        <input type="number" name="crudeOilWeight" step="0.1" min="0" value="${item.crudeOilWeight}" required oninput="RefiningPage.calcRefiningRate()">
+                        <input type="number" id="refiningCrudeOil" name="crudeOilWeight" step="0.1" min="0" value="${item.crudeOilWeight}" required oninput="RefiningPage.calcRefiningRate()">
+                    </div>
+                    <div class="form-group">
+                        <label>精炼油重量(kg) *</label>
+                        <input type="number" id="refiningRefinedOil" name="refinedOilWeight" step="0.1" min="0" value="${item.refinedOilWeight}" required oninput="RefiningPage.calcRefiningRate()">
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>精炼油重量(kg) *</label>
-                    <input type="number" name="refinedOilWeight" step="0.1" min="0" value="${item.refinedOilWeight}" required oninput="RefiningPage.calcRefiningRate()">
-                </div>
-                <div class="form-group">
                     <label>精炼得率(%)</label>
-                    <input type="text" name="refiningRate" value="${Utils.formatNumber(item.refiningRate, 2)}%" readonly style="background: #f5f5f5; color: #689f38; font-weight: 700;">
+                    <input type="text" name="refiningRateDisplay" value="${Utils.formatNumber(item.refiningRate, 2)}%" readonly style="background: #f5f5f5; color: #689f38; font-weight: 700;">
                 </div>
                 <div class="section-title">精炼工艺</div>
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px;">
@@ -441,10 +561,20 @@ const RefiningPage = {
         const form = document.getElementById('refiningForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('refiningForm');
+
             const formData = new FormData(form);
             const crude = parseFloat(formData.get('crudeOilWeight')) || 0;
             const refined = parseFloat(formData.get('refinedOilWeight')) || 0;
+
+            const oilCheck = Utils.validate.refinedOil(refined, crude);
+            if (!oilCheck.valid) {
+                Utils.showFieldError('refiningRefinedOil', oilCheck.message);
+                return;
+            }
+
             const data = {
+                filteringId: formData.get('filteringId') || null,
                 crudeOilWeight: crude,
                 refinedOilWeight: refined,
                 refiningRate: crude > 0 ? (refined / crude) * 100 : 0,
@@ -465,13 +595,28 @@ const RefiningPage = {
     },
 
     deleteRefining(id) {
-        if (!Utils.confirm('确定要删除这条精炼记录吗？')) return;
+        if (!Utils.confirm('确定要删除这条精炼记录吗？删除后无法恢复。')) return;
         Storage.delete('refiningRecords', id);
         Utils.toast('删除成功', 'success');
         this.refresh();
     },
 
     openBottlingModal() {
+        const refiningList = (Storage.get('refiningRecords') || [])
+            .filter(r => r.status === 'completed');
+        const refiningOptions = refiningList.map(r => 
+            `<option value="${r.id}" data-weight="${r.refinedOilWeight}">
+                ${r.batchNo} - ${Utils.formatNumber(r.refinedOilWeight, 1)}kg精炼油
+            </option>`
+        ).join('');
+
+        const products = Storage.get('products') || [];
+        const productOptions = products.map(p => 
+            `<option value="${p.id}" data-spec="${p.spec}" data-name="${p.name}">
+                ${p.name} (${p.spec}) - ¥${p.price}
+            </option>`
+        ).join('');
+
         const content = `
             <form id="bottlingForm">
                 <div class="form-row">
@@ -480,14 +625,30 @@ const RefiningPage = {
                         <input type="text" name="batchNo" value="${Utils.generateBatchNo('GZ')}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
+                        <label>来源精炼批次</label>
+                        <select id="refiningSelect" name="refiningId" onchange="RefiningPage.onRefiningChange()">
+                            <option value="">直接灌装（无来源）</option>
+                            ${refiningOptions}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
                         <label>油品总量(kg) *</label>
-                        <input type="number" name="oilWeight" step="0.1" min="0" required>
+                        <input type="number" id="bottlingOilWeight" name="oilWeight" step="0.1" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label>关联产品</label>
+                        <select id="productSelect" name="productId" onchange="RefiningPage.onProductChange()">
+                            <option value="">不关联产品</option>
+                            ${productOptions}
+                        </select>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>瓶子规格</label>
-                        <select name="bottleSpec">
+                        <select id="bottleSpecSelect" name="bottleSpec">
                             <option value="250ml">250ml</option>
                             <option value="500ml" selected>500ml</option>
                             <option value="1L">1L</option>
@@ -497,7 +658,7 @@ const RefiningPage = {
                     </div>
                     <div class="form-group">
                         <label>灌装数量(瓶) *</label>
-                        <input type="number" name="bottleCount" min="0" value="0" required>
+                        <input type="number" id="bottlingBottleCount" name="bottleCount" min="0" value="0" required>
                     </div>
                 </div>
                 <div class="form-group">
@@ -538,30 +699,101 @@ const RefiningPage = {
         const form = document.getElementById('bottlingForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('bottlingForm');
+
             const formData = new FormData(form);
+            const oilWeight = parseFloat(formData.get('oilWeight')) || 0;
+            const bottleCount = parseInt(formData.get('bottleCount')) || 0;
+            const productId = formData.get('productId') || null;
+
+            const oilCheck = Utils.validate.positiveNumber(oilWeight, '油品总量');
+            if (!oilCheck.valid) {
+                Utils.showFieldError('bottlingOilWeight', oilCheck.message);
+                return;
+            }
+
+            if (bottleCount <= 0) {
+                Utils.showFieldError('bottlingBottleCount', '灌装数量必须大于0');
+                return;
+            }
+
             const data = {
                 batchNo: formData.get('batchNo'),
-                oilWeight: parseFloat(formData.get('oilWeight')) || 0,
+                refiningId: formData.get('refiningId') || null,
+                oilWeight: oilWeight,
                 bottleSpec: formData.get('bottleSpec'),
-                bottleCount: parseInt(formData.get('bottleCount')) || 0,
+                bottleCount: bottleCount,
                 labelType: formData.get('labelType'),
+                productId: productId,
                 operator: formData.get('operator'),
                 status: formData.get('status'),
                 remark: formData.get('remark')
             };
 
+            if (productId && data.status === 'completed') {
+                const stockResult = Storage.updateProductStock(productId, bottleCount, `灌装入库 ${data.batchNo}`);
+                if (!stockResult.success) {
+                    Utils.toast(stockResult.message, 'error');
+                    return;
+                }
+            }
+
             Storage.add('bottlingRecords', data);
             Utils.hideModal();
-            Utils.toast('保存成功', 'success');
+            Utils.toast(productId ? '保存成功，库存已更新' : '保存成功', 'success');
             this.refresh();
+            App.updateSidebarStats();
         });
+    },
+
+    onRefiningChange() {
+        const select = document.getElementById('refiningSelect');
+        const option = select.options[select.selectedIndex];
+        const weightInput = document.getElementById('bottlingOilWeight');
+        if (option && option.dataset.weight) {
+            weightInput.value = option.dataset.weight;
+        }
+    },
+
+    onProductChange() {
+        const select = document.getElementById('productSelect');
+        const option = select.options[select.selectedIndex];
+        const specSelect = document.getElementById('bottleSpecSelect');
+        if (option && option.dataset.spec) {
+            for (let i = 0; i < specSelect.options.length; i++) {
+                if (specSelect.options[i].value === option.dataset.spec) {
+                    specSelect.selectedIndex = i;
+                    break;
+                }
+            }
+        }
     },
 
     viewBottling(id) {
         const item = Storage.findById('bottlingRecords', id);
         if (!item) return;
 
+        const chain = Storage.getBatchChain('bottlingRecords', id);
+        const refining = chain.source;
+
+        let sourceHtml = '';
+        if (refining) {
+            sourceHtml = `
+                <div style="padding: 8px 12px; background: #e8f4fd; border-radius: 6px; cursor: pointer;"
+                     onclick="Utils.hideModal(); App.switchPage('refining');">
+                    <span style="color: #1976d2; font-weight: 600;">${refining.batchNo}</span>
+                    <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(refining.refinedOilWeight || 0, 1)}kg精炼油</span>
+                    <span style="color: #1976d2; font-size: 12px; margin-left: 8px;">← 来源精炼</span>
+                </div>
+            `;
+        } else {
+            sourceHtml = '<div style="color: #aaa; font-size: 13px;">无来源（直接灌装）</div>';
+        }
+
+        const product = item.productId ? Storage.findById('products', item.productId) : null;
+
         const content = `
+            <div class="section-title">基本信息</div>
             <div class="info-grid">
                 <div class="info-item">
                     <span class="label">批次号</span>
@@ -596,13 +828,26 @@ const RefiningPage = {
                     <span class="value">${Utils.formatDateTime(item.createdAt)}</span>
                 </div>
             </div>
-            ${item.remark ? `
-                <div class="form-group" style="margin-top: 16px;">
-                    <label>备注</label>
-                    <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
+
+            ${product ? `
+                <div class="section-title" style="margin-top: 20px;">关联产品</div>
+                <div style="padding: 12px; background: #f0f9eb; border-radius: 8px;">
+                    <div style="font-weight: 600; color: #333;">${product.name}</div>
+                    <div style="color: #888; font-size: 13px; margin-top: 4px;">规格: ${product.spec} | 单价: ¥${product.price} | 当前库存: ${product.stock}瓶</div>
                 </div>
             ` : ''}
-            <div class="modal-footer">
+
+            <div class="section-title" style="margin-top: 20px;">批次流转</div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px; margin-bottom: 12px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📥 来源批次</div>
+                ${sourceHtml}
+            </div>
+
+            ${item.remark ? `
+                <div class="section-title" style="margin-top: 20px;">备注</div>
+                <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
+            ` : ''}
+            <div class="modal-footer" style="margin-top: 20px;">
                 <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
             </div>
         `;
@@ -614,6 +859,21 @@ const RefiningPage = {
         const item = Storage.findById('bottlingRecords', id);
         if (!item) return;
 
+        const refiningList = (Storage.get('refiningRecords') || [])
+            .filter(r => r.status === 'completed' || r.id === item.refiningId);
+        const refiningOptions = refiningList.map(r => 
+            `<option value="${r.id}" ${r.id === item.refiningId ? 'selected' : ''}>
+                ${r.batchNo} - ${Utils.formatNumber(r.refinedOilWeight, 1)}kg精炼油
+            </option>`
+        ).join('');
+
+        const products = Storage.get('products') || [];
+        const productOptions = products.map(p => 
+            `<option value="${p.id}" ${p.id === item.productId ? 'selected' : ''} data-spec="${p.spec}">
+                ${p.name} (${p.spec}) - ¥${p.price}
+            </option>`
+        ).join('');
+
         const content = `
             <form id="bottlingForm">
                 <div class="form-row">
@@ -622,8 +882,24 @@ const RefiningPage = {
                         <input type="text" name="batchNo" value="${item.batchNo}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
+                        <label>来源精炼批次</label>
+                        <select name="refiningId">
+                            <option value="">直接灌装（无来源）</option>
+                            ${refiningOptions}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
                         <label>油品总量(kg) *</label>
-                        <input type="number" name="oilWeight" step="0.1" min="0" value="${item.oilWeight}" required>
+                        <input type="number" id="bottlingOilWeight" name="oilWeight" step="0.1" min="0" value="${item.oilWeight}" required>
+                    </div>
+                    <div class="form-group">
+                        <label>关联产品</label>
+                        <select name="productId">
+                            <option value="">不关联产品</option>
+                            ${productOptions}
+                        </select>
                     </div>
                 </div>
                 <div class="form-row">
@@ -639,7 +915,7 @@ const RefiningPage = {
                     </div>
                     <div class="form-group">
                         <label>灌装数量(瓶) *</label>
-                        <input type="number" name="bottleCount" min="0" value="${item.bottleCount}" required>
+                        <input type="number" id="bottlingBottleCount" name="bottleCount" min="0" value="${item.bottleCount}" required>
                     </div>
                 </div>
                 <div class="form-group">
@@ -681,28 +957,65 @@ const RefiningPage = {
         form.addEventListener('submit', (e) => {
             e.preventDefault();
             const formData = new FormData(form);
+            const bottleCount = parseInt(formData.get('bottleCount')) || 0;
+            const productId = formData.get('productId') || null;
+
+            if (bottleCount <= 0) {
+                Utils.toast('灌装数量必须大于0', 'error');
+                return;
+            }
+
+            const oldProductId = item.productId;
+            const oldCount = item.bottleCount || 0;
+            const oldCompleted = item.status === 'completed';
+
             const data = {
+                refiningId: formData.get('refiningId') || null,
                 oilWeight: parseFloat(formData.get('oilWeight')) || 0,
                 bottleSpec: formData.get('bottleSpec'),
-                bottleCount: parseInt(formData.get('bottleCount')) || 0,
+                bottleCount: bottleCount,
                 labelType: formData.get('labelType'),
+                productId: productId,
                 operator: formData.get('operator'),
                 status: formData.get('status'),
                 remark: formData.get('remark')
             };
 
+            const newCompleted = data.status === 'completed';
+
+            if (oldCompleted && oldProductId) {
+                Storage.updateProductStock(oldProductId, -oldCount, `编辑灌装单 ${item.batchNo} 回滚`);
+            }
+
+            if (newCompleted && productId) {
+                const stockResult = Storage.updateProductStock(productId, bottleCount, `编辑灌装单 ${item.batchNo} 入库`);
+                if (!stockResult.success) {
+                    Utils.toast(stockResult.message, 'error');
+                    if (oldCompleted && oldProductId) {
+                        Storage.updateProductStock(oldProductId, oldCount, '回滚恢复');
+                    }
+                    return;
+                }
+            }
+
             Storage.update('bottlingRecords', id, data);
             Utils.hideModal();
             Utils.toast('更新成功', 'success');
             this.refresh();
+            App.updateSidebarStats();
         });
     },
 
     deleteBottling(id) {
-        if (!Utils.confirm('确定要删除这条灌装记录吗？')) return;
+        if (!Utils.confirm('确定要删除这条灌装记录吗？删除后无法恢复。')) return;
+        const item = Storage.findById('bottlingRecords', id);
+        if (item && item.productId && item.status === 'completed' && item.bottleCount) {
+            Storage.updateProductStock(item.productId, -item.bottleCount, `删除灌装单 ${item.batchNo}`);
+        }
         Storage.delete('bottlingRecords', id);
         Utils.toast('删除成功', 'success');
         this.refresh();
+        App.updateSidebarStats();
     },
 
     refresh() {

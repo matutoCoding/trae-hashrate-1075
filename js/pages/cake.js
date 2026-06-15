@@ -53,8 +53,9 @@ const CakePage = {
 
     renderInventoryTable() {
         const records = (Storage.get('cakeRecords') || []).filter(r => r.type === 'produce');
+        const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        if (records.length === 0) {
+        if (sorted.length === 0) {
             return `<div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-text">暂无入库记录</div></div>`;
         }
 
@@ -74,23 +75,27 @@ const CakePage = {
                         </tr>
                     </thead>
                     <tbody>
-                        ${records.map(item => `
-                            <tr>
-                                <td>${item.batchNo || '-'}</td>
-                                <td>${item.pressingId ? '-' : '-'}</td>
-                                <td style="font-weight: 600; color: #795548;">${Utils.formatNumber(item.cakeWeight, 1)}</td>
-                                <td>${item.cakeCount || '-'}</td>
-                                <td>${item.cakeCount && item.cakeCount > 0 ? Utils.formatNumber(item.cakeWeight / item.cakeCount, 2) : '-'} kg</td>
-                                <td>${Utils.formatDateTime(item.createdAt)}</td>
-                                <td>${this.getStatusBadge(item.status)}</td>
-                                <td>
-                                    <div class="action-buttons">
-                                        <button class="btn btn-secondary btn-sm" onclick="CakePage.editInventory('${item.id}')">编辑</button>
-                                        <button class="btn btn-danger btn-sm" onclick="CakePage.deleteRecord('${item.id}')">删除</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
+                        ${sorted.map(item => {
+                            const pressing = item.pressingId ? Storage.findById('pressingRecords', item.pressingId) : null;
+                            return `
+                                <tr>
+                                    <td>${item.batchNo || '-'}</td>
+                                    <td>${pressing ? pressing.batchNo : '无来源'}</td>
+                                    <td style="font-weight: 600; color: #795548;">${Utils.formatNumber(item.cakeWeight, 1)}</td>
+                                    <td>${item.cakeCount || '-'}</td>
+                                    <td>${item.cakeCount && item.cakeCount > 0 ? Utils.formatNumber(item.cakeWeight / item.cakeCount, 2) : '-'} kg</td>
+                                    <td>${Utils.formatDateTime(item.createdAt)}</td>
+                                    <td>${this.getStatusBadge(item.status)}</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn btn-outline btn-sm" onclick="CakePage.viewInventory('${item.id}')">查看</button>
+                                            <button class="btn btn-secondary btn-sm" onclick="CakePage.editInventory('${item.id}')">编辑</button>
+                                            <button class="btn btn-danger btn-sm" onclick="CakePage.deleteRecord('${item.id}')">删除</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -99,8 +104,9 @@ const CakePage = {
 
     renderSalesTable() {
         const records = (Storage.get('cakeRecords') || []).filter(r => r.type === 'sell');
+        const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        if (records.length === 0) {
+        if (sorted.length === 0) {
             return `<div class="empty-state"><div class="empty-state-icon">💰</div><div class="empty-state-text">暂无销售记录</div></div>`;
         }
 
@@ -121,7 +127,7 @@ const CakePage = {
                         </tr>
                     </thead>
                     <tbody>
-                        ${records.map(item => `
+                        ${sorted.map(item => `
                             <tr>
                                 <td>${Utils.formatDate(item.createdAt)}</td>
                                 <td>${Utils.escapeHtml(item.customerName || '-')}</td>
@@ -173,7 +179,8 @@ const CakePage = {
 
     getTotalSales() {
         const records = Storage.get('cakeRecords') || [];
-        return records.filter(r => r.type === 'sell').reduce((sum, r) => sum + (r.totalAmount || 0), 0);
+        return records.filter(r => r.type === 'sell' && r.status !== 'cancelled')
+            .reduce((sum, r) => sum + (r.totalAmount || 0), 0);
     },
 
     getTotalProduced() {
@@ -195,6 +202,14 @@ const CakePage = {
     },
 
     openInventoryModal() {
+        const pressingList = (Storage.get('pressingRecords') || [])
+            .filter(r => r.status === 'completed');
+        const pressingOptions = pressingList.map(p => 
+            `<option value="${p.id}" data-weight="${p.cakeWeight || 0}" data-oil="${p.crudeOilWeight || 0}">
+                ${p.batchNo} - ${Utils.formatNumber(p.cakeWeight || 0, 1)}kg 茶枯
+            </option>`
+        ).join('');
+
         const content = `
             <form id="cakeForm">
                 <div class="form-row">
@@ -203,13 +218,22 @@ const CakePage = {
                         <input type="text" name="batchNo" value="${Utils.generateBatchNo('CK')}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
-                        <label>茶枯重量(kg) *</label>
-                        <input type="number" name="cakeWeight" step="0.1" min="0" required>
+                        <label>来源压榨批次</label>
+                        <select id="pressingSelect" name="pressingId" onchange="CakePage.onPressingChange()">
+                            <option value="">直接入库（无来源）</option>
+                            ${pressingOptions}
+                        </select>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>茶枯数量(块)</label>
-                    <input type="number" name="cakeCount" min="0" value="0">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>茶枯重量(kg) *</label>
+                        <input type="number" id="cakeWeight" name="cakeWeight" step="0.1" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label>茶枯数量(块)</label>
+                        <input type="number" name="cakeCount" min="0" value="0">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>状态</label>
@@ -234,11 +258,22 @@ const CakePage = {
         const form = document.getElementById('cakeForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('cakeForm');
+
             const formData = new FormData(form);
+            const cakeWeight = parseFloat(formData.get('cakeWeight')) || 0;
+
+            const weightCheck = Utils.validate.positiveNumber(cakeWeight, '茶枯重量');
+            if (!weightCheck.valid) {
+                Utils.showFieldError('cakeWeight', weightCheck.message);
+                return;
+            }
+
             const data = {
                 type: 'produce',
                 batchNo: formData.get('batchNo'),
-                cakeWeight: parseFloat(formData.get('cakeWeight')) || 0,
+                pressingId: formData.get('pressingId') || null,
+                cakeWeight: cakeWeight,
                 cakeCount: parseInt(formData.get('cakeCount')) || 0,
                 status: formData.get('status'),
                 remark: formData.get('remark')
@@ -251,9 +286,94 @@ const CakePage = {
         });
     },
 
+    onPressingChange() {
+        const select = document.getElementById('pressingSelect');
+        const option = select.options[select.selectedIndex];
+        const weightInput = document.getElementById('cakeWeight');
+        if (option && option.dataset.weight) {
+            weightInput.value = option.dataset.weight;
+        }
+    },
+
+    viewInventory(id) {
+        const item = Storage.findById('cakeRecords', id);
+        if (!item) return;
+
+        let sourceHtml = '';
+        if (item.pressingId) {
+            const pressing = Storage.findById('pressingRecords', item.pressingId);
+            if (pressing) {
+                sourceHtml = `
+                    <div style="padding: 8px 12px; background: #e8f4fd; border-radius: 6px; cursor: pointer;"
+                         onclick="Utils.hideModal(); App.switchPage('pressing');">
+                        <span style="color: #1976d2; font-weight: 600;">${pressing.batchNo}</span>
+                        <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(pressing.cakeWeight || 0, 1)}kg 茶枯</span>
+                        <span style="color: #1976d2; font-size: 12px; margin-left: 8px;">← 来源压榨</span>
+                    </div>
+                `;
+            } else {
+                sourceHtml = '<div style="color: #aaa; font-size: 13px;">来源批次已删除</div>';
+            }
+        } else {
+            sourceHtml = '<div style="color: #aaa; font-size: 13px;">无来源（直接入库）</div>';
+        }
+
+        const content = `
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="label">批次号</span>
+                    <span class="value">${item.batchNo || '-'}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">状态</span>
+                    <span class="value">${this.getStatusBadge(item.status)}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">茶枯重量</span>
+                    <span class="value" style="color: #795548; font-weight: 700;">${Utils.formatNumber(item.cakeWeight, 1)} kg</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">数量</span>
+                    <span class="value">${item.cakeCount || 0} 块</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">单块重量</span>
+                    <span class="value">${item.cakeCount && item.cakeCount > 0 ? Utils.formatNumber(item.cakeWeight / item.cakeCount, 2) : '-'} kg</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">入库时间</span>
+                    <span class="value">${Utils.formatDateTime(item.createdAt)}</span>
+                </div>
+            </div>
+
+            <div class="section-title" style="margin-top: 20px;">来源批次</div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px;">
+                ${sourceHtml}
+            </div>
+
+            ${item.remark ? `
+                <div class="section-title" style="margin-top: 20px;">备注</div>
+                <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
+            ` : ''}
+            <div class="modal-footer" style="margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
+            </div>
+        `;
+
+        Utils.showModal('入库详情', content);
+    },
+
     editInventory(id) {
         const item = Storage.findById('cakeRecords', id);
         if (!item) return;
+
+        const pressingList = (Storage.get('pressingRecords') || [])
+            .filter(r => r.status === 'completed' || r.id === item.pressingId);
+        const pressingOptions = pressingList.map(p => 
+            `<option value="${p.id}" ${p.id === item.pressingId ? 'selected' : ''}>
+                ${p.batchNo} - ${Utils.formatNumber(p.cakeWeight || 0, 1)}kg 茶枯
+            </option>`
+        ).join('');
 
         const content = `
             <form id="cakeForm">
@@ -263,13 +383,22 @@ const CakePage = {
                         <input type="text" name="batchNo" value="${item.batchNo || ''}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
-                        <label>茶枯重量(kg) *</label>
-                        <input type="number" name="cakeWeight" step="0.1" min="0" value="${item.cakeWeight}" required>
+                        <label>来源压榨批次</label>
+                        <select name="pressingId">
+                            <option value="">直接入库（无来源）</option>
+                            ${pressingOptions}
+                        </select>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>茶枯数量(块)</label>
-                    <input type="number" name="cakeCount" min="0" value="${item.cakeCount || 0}">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>茶枯重量(kg) *</label>
+                        <input type="number" id="cakeWeight" name="cakeWeight" step="0.1" min="0" value="${item.cakeWeight}" required>
+                    </div>
+                    <div class="form-group">
+                        <label>茶枯数量(块)</label>
+                        <input type="number" name="cakeCount" min="0" value="${item.cakeCount || 0}">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>状态</label>
@@ -294,9 +423,20 @@ const CakePage = {
         const form = document.getElementById('cakeForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('cakeForm');
+
             const formData = new FormData(form);
+            const cakeWeight = parseFloat(formData.get('cakeWeight')) || 0;
+
+            const weightCheck = Utils.validate.positiveNumber(cakeWeight, '茶枯重量');
+            if (!weightCheck.valid) {
+                Utils.showFieldError('cakeWeight', weightCheck.message);
+                return;
+            }
+
             const data = {
-                cakeWeight: parseFloat(formData.get('cakeWeight')) || 0,
+                pressingId: formData.get('pressingId') || null,
+                cakeWeight: cakeWeight,
                 cakeCount: parseInt(formData.get('cakeCount')) || 0,
                 status: formData.get('status'),
                 remark: formData.get('remark')
@@ -310,6 +450,8 @@ const CakePage = {
     },
 
     openSaleModal() {
+        const instockWeight = parseFloat(this.getInstockWeight()) || 0;
+
         const content = `
             <form id="cakeSaleForm">
                 <div class="form-row">
@@ -325,7 +467,8 @@ const CakePage = {
                 <div class="form-row">
                     <div class="form-group">
                         <label>茶枯重量(kg) *</label>
-                        <input type="number" name="cakeWeight" step="0.1" min="0" required oninput="CakePage.calcTotal()">
+                        <input type="number" id="saleCakeWeight" name="cakeWeight" step="0.1" min="0" required oninput="CakePage.calcTotal()">
+                        <div style="font-size: 12px; color: #888; margin-top: 4px;">当前库存: ${instockWeight} kg</div>
                     </div>
                     <div class="form-group">
                         <label>数量(块)</label>
@@ -365,9 +508,23 @@ const CakePage = {
         const form = document.getElementById('cakeSaleForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('cakeSaleForm');
+
             const formData = new FormData(form);
             const weight = parseFloat(formData.get('cakeWeight')) || 0;
             const price = parseFloat(formData.get('price')) || 0;
+
+            const weightCheck = Utils.validate.positiveNumber(weight, '茶枯重量');
+            if (!weightCheck.valid) {
+                Utils.showFieldError('saleCakeWeight', weightCheck.message);
+                return;
+            }
+
+            if (weight > instockWeight) {
+                Utils.showFieldError('saleCakeWeight', `库存不足！当前库存 ${instockWeight}kg`);
+                return;
+            }
+
             const data = {
                 type: 'sell',
                 customerName: formData.get('customerName'),
@@ -455,6 +612,8 @@ const CakePage = {
         const item = Storage.findById('cakeRecords', id);
         if (!item) return;
 
+        const instockWeight = parseFloat(this.getInstockWeight()) || 0;
+
         const content = `
             <form id="cakeSaleForm">
                 <div class="form-row">
@@ -470,7 +629,8 @@ const CakePage = {
                 <div class="form-row">
                     <div class="form-group">
                         <label>茶枯重量(kg) *</label>
-                        <input type="number" name="cakeWeight" step="0.1" min="0" value="${item.cakeWeight}" required oninput="CakePage.calcTotal()">
+                        <input type="number" id="saleCakeWeight" name="cakeWeight" step="0.1" min="0" value="${item.cakeWeight}" required oninput="CakePage.calcTotal()">
+                        <div style="font-size: 12px; color: #888; margin-top: 4px;">当前库存: ${instockWeight} kg</div>
                     </div>
                     <div class="form-group">
                         <label>数量(块)</label>
@@ -510,9 +670,23 @@ const CakePage = {
         const form = document.getElementById('cakeSaleForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('cakeSaleForm');
+
             const formData = new FormData(form);
             const weight = parseFloat(formData.get('cakeWeight')) || 0;
             const price = parseFloat(formData.get('price')) || 0;
+
+            const weightCheck = Utils.validate.positiveNumber(weight, '茶枯重量');
+            if (!weightCheck.valid) {
+                Utils.showFieldError('saleCakeWeight', weightCheck.message);
+                return;
+            }
+
+            if (weight > instockWeight + item.cakeWeight) {
+                Utils.showFieldError('saleCakeWeight', `库存不足！当前库存 ${instockWeight}kg`);
+                return;
+            }
+
             const data = {
                 customerName: formData.get('customerName'),
                 customerPhone: formData.get('customerPhone'),

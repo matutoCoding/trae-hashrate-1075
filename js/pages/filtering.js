@@ -1,4 +1,10 @@
 const FilteringPage = {
+    filters: {
+        method: '',
+        dateStart: '',
+        dateEnd: ''
+    },
+
     render() {
         return `
             <div class="stats-grid">
@@ -41,16 +47,16 @@ const FilteringPage = {
                 </div>
                 <div class="card-body">
                     <div class="filter-bar">
-                        <select id="filterMethod">
+                        <select id="filterMethod" onchange="FilteringPage.applyFilter()">
                             <option value="">全部过滤方式</option>
-                            <option value="板框过滤">板框过滤</option>
-                            <option value="离心过滤">离心过滤</option>
-                            <option value="自然沉淀">自然沉淀</option>
-                            <option value="硅藻土过滤">硅藻土过滤</option>
+                            <option value="板框过滤" ${this.filters.method === '板框过滤' ? 'selected' : ''}>板框过滤</option>
+                            <option value="离心过滤" ${this.filters.method === '离心过滤' ? 'selected' : ''}>离心过滤</option>
+                            <option value="自然沉淀" ${this.filters.method === '自然沉淀' ? 'selected' : ''}>自然沉淀</option>
+                            <option value="硅藻土过滤" ${this.filters.method === '硅藻土过滤' ? 'selected' : ''}>硅藻土过滤</option>
                         </select>
-                        <input type="date" id="filterDateStart">
+                        <input type="date" id="filterDateStart" value="${this.filters.dateStart}" onchange="FilteringPage.applyFilter()">
                         <span>至</span>
-                        <input type="date" id="filterDateEnd">
+                        <input type="date" id="filterDateEnd" value="${this.filters.dateEnd}" onchange="FilteringPage.applyFilter()">
                         <button class="btn btn-secondary btn-sm" onclick="FilteringPage.refresh()">查询</button>
                         <button class="btn btn-secondary btn-sm" onclick="FilteringPage.resetFilter()">重置</button>
                     </div>
@@ -59,18 +65,18 @@ const FilteringPage = {
                             <thead>
                                 <tr>
                                     <th>批次号</th>
+                                    <th>来源批次</th>
                                     <th>毛油重量(kg)</th>
                                     <th>净油重量(kg)</th>
                                     <th>油脚沉淀(kg)</th>
                                     <th>过滤方式</th>
-                                    <th>过滤时间(分钟)</th>
                                     <th>操作人</th>
                                     <th>日期</th>
                                     <th>状态</th>
                                     <th>操作</th>
                                 </tr>
                             </thead>
-                            <tbody id="filteringTableBody">
+                            <tbody>
                                 ${this.renderTableRows()}
                             </tbody>
                         </table>
@@ -80,23 +86,35 @@ const FilteringPage = {
         `;
     },
 
-    renderTableRows() {
+    getFilteredData() {
         const records = Storage.get('filteringRecords') || [];
+        const { method, dateStart, dateEnd } = this.filters;
+
+        return records.filter(item => {
+            if (method && item.filterMethod !== method) return false;
+            if (dateStart && !Utils.isDateInRange(item.createdAt, dateStart, null)) return false;
+            if (dateEnd && !Utils.isDateInRange(item.createdAt, null, dateEnd)) return false;
+            return true;
+        }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+
+    renderTableRows() {
+        const records = this.getFilteredData();
 
         if (records.length === 0) {
             return `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🧪</div><div class="empty-state-text">暂无过滤记录</div></div></td></tr>`;
         }
 
         return records.map(item => {
-            const rate = item.crudeOilWeight > 0 ? ((item.filteredOilWeight / item.crudeOilWeight) * 100).toFixed(2) : '0.00';
+            const pressing = item.pressingId ? Storage.findById('pressingRecords', item.pressingId) : null;
             return `
                 <tr>
                     <td>${item.batchNo}</td>
+                    <td>${pressing ? pressing.batchNo : '直接过滤'}</td>
                     <td>${Utils.formatNumber(item.crudeOilWeight, 1)}</td>
                     <td style="font-weight: 600; color: #2196f3;">${Utils.formatNumber(item.filteredOilWeight, 1)}</td>
                     <td>${Utils.formatNumber(item.sedimentWeight, 1)}</td>
                     <td>${item.filterMethod}</td>
-                    <td>${item.filterTime || '-'}</td>
                     <td>${Utils.escapeHtml(item.operator || '-')}</td>
                     <td>${Utils.formatDate(item.createdAt)}</td>
                     <td>${this.getStatusBadge(item.status)}</td>
@@ -112,6 +130,13 @@ const FilteringPage = {
         }).join('');
     },
 
+    applyFilter() {
+        this.filters.method = document.getElementById('filterMethod').value;
+        this.filters.dateStart = document.getElementById('filterDateStart').value;
+        this.filters.dateEnd = document.getElementById('filterDateEnd').value;
+        this.refresh();
+    },
+
     getStatusBadge(status) {
         const map = {
             settling: { text: '沉淀中', class: 'badge-warning' },
@@ -123,7 +148,7 @@ const FilteringPage = {
     },
 
     getFilteringCount() {
-        const records = Storage.get('filteringRecords') || [];
+        const records = this.getFilteredData();
         return records.length;
     },
 
@@ -146,6 +171,14 @@ const FilteringPage = {
     },
 
     openAddModal() {
+        const pressingList = (Storage.get('pressingRecords') || [])
+            .filter(p => p.status === 'completed');
+        const pressingOptions = pressingList.map(p => 
+            `<option value="${p.id}" data-weight="${p.crudeOilWeight}">
+                ${p.batchNo} - ${Utils.formatNumber(p.crudeOilWeight, 1)}kg毛油
+            </option>`
+        ).join('');
+
         const content = `
             <form id="filteringForm">
                 <div class="form-row">
@@ -154,21 +187,28 @@ const FilteringPage = {
                         <input type="text" name="batchNo" value="${Utils.generateBatchNo('GL')}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
-                        <label>毛油重量(kg) *</label>
-                        <input type="number" name="crudeOilWeight" step="0.1" min="0" required oninput="FilteringPage.calcSediment()">
+                        <label>来源压榨批次</label>
+                        <select id="pressingSelect" name="pressingId" onchange="FilteringPage.onPressingChange()">
+                            <option value="">直接过滤（无来源）</option>
+                            ${pressingOptions}
+                        </select>
                     </div>
                 </div>
                 <div class="form-row">
+                    <div class="form-group">
+                        <label>毛油重量(kg) *</label>
+                        <input type="number" id="filteringCrudeOil" name="crudeOilWeight" step="0.1" min="0" required oninput="FilteringPage.calcSediment()">
+                    </div>
                     <div class="form-group">
                         <label>净油重量(kg) *</label>
-                        <input type="number" name="filteredOilWeight" step="0.1" min="0" required oninput="FilteringPage.calcSediment()">
-                    </div>
-                    <div class="form-group">
-                        <label>油脚沉淀(kg)</label>
-                        <input type="text" name="sedimentWeight" readonly style="background: #f5f5f5;">
+                        <input type="number" id="filteringFilteredOil" name="filteredOilWeight" step="0.1" min="0" required oninput="FilteringPage.calcSediment()">
                     </div>
                 </div>
                 <div class="form-row">
+                    <div class="form-group">
+                        <label>油脚沉淀(kg)</label>
+                        <input type="text" id="filteringSediment" name="sedimentWeightDisplay" readonly style="background: #f5f5f5;">
+                    </div>
                     <div class="form-group">
                         <label>过滤方式</label>
                         <select name="filterMethod">
@@ -178,24 +218,24 @@ const FilteringPage = {
                             <option value="硅藻土过滤">硅藻土过滤</option>
                         </select>
                     </div>
+                </div>
+                <div class="form-row">
                     <div class="form-group">
                         <label>过滤时间(分钟)</label>
                         <input type="number" name="filterTime" min="0" value="180">
                     </div>
-                </div>
-                <div class="form-row">
                     <div class="form-group">
                         <label>操作人</label>
                         <input type="text" name="operator">
                     </div>
-                    <div class="form-group">
-                        <label>状态</label>
-                        <select name="status">
-                            <option value="settling">沉淀中</option>
-                            <option value="filtering">过滤中</option>
-                            <option value="completed">已完成</option>
-                        </select>
-                    </div>
+                </div>
+                <div class="form-group">
+                    <label>状态</label>
+                    <select name="status">
+                        <option value="settling">沉淀中</option>
+                        <option value="filtering">过滤中</option>
+                        <option value="completed">已完成</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label>备注</label>
@@ -213,11 +253,36 @@ const FilteringPage = {
         const form = document.getElementById('filteringForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('filteringForm');
+
             const formData = new FormData(form);
             const crude = parseFloat(formData.get('crudeOilWeight')) || 0;
             const filtered = parseFloat(formData.get('filteredOilWeight')) || 0;
+
+            const crudeCheck = Utils.validate.positiveNumber(crude, '毛油重量');
+            if (!crudeCheck.valid) {
+                Utils.showFieldError('filteringCrudeOil', crudeCheck.message);
+                return;
+            }
+
+            const filteredCheck = Utils.validate.positiveNumber(filtered, '净油重量');
+            if (!filteredCheck.valid) {
+                Utils.showFieldError('filteringFilteredOil', filteredCheck.message);
+                return;
+            }
+
+            const oilCheck = Utils.validate.filteredOil(filtered, crude);
+            if (!oilCheck.valid) {
+                Utils.showFieldError('filteringFilteredOil', oilCheck.message);
+                return;
+            }
+            if (oilCheck.warning) {
+                Utils.showFieldError('filteringFilteredOil', oilCheck.warning, 'warning');
+            }
+
             const data = {
                 batchNo: formData.get('batchNo'),
+                pressingId: formData.get('pressingId') || null,
                 crudeOilWeight: crude,
                 filteredOilWeight: filtered,
                 sedimentWeight: crude - filtered,
@@ -235,14 +300,24 @@ const FilteringPage = {
         });
     },
 
+    onPressingChange() {
+        const select = document.getElementById('pressingSelect');
+        const option = select.options[select.selectedIndex];
+        const weightInput = document.getElementById('filteringCrudeOil');
+        if (option && option.dataset.weight) {
+            weightInput.value = option.dataset.weight;
+            this.calcSediment();
+        }
+    },
+
     calcSediment() {
         const form = document.getElementById('filteringForm');
         if (!form) return;
         const crude = parseFloat(form.crudeOilWeight.value) || 0;
         const filtered = parseFloat(form.filteredOilWeight.value) || 0;
         const sediment = Math.max(0, crude - filtered).toFixed(1);
-        if (form.sedimentWeight) {
-            form.sedimentWeight.value = sediment + ' kg';
+        if (form.sedimentWeightDisplay) {
+            form.sedimentWeightDisplay.value = sediment + ' kg';
         }
     },
 
@@ -250,9 +325,41 @@ const FilteringPage = {
         const item = Storage.findById('filteringRecords', id);
         if (!item) return;
 
+        const chain = Storage.getBatchChain('filteringRecords', id);
+        const pressing = chain.source;
+
+        let sourceHtml = '';
+        if (pressing) {
+            sourceHtml = `
+                <div style="padding: 8px 12px; background: #e8f4fd; border-radius: 6px; cursor: pointer;"
+                     onclick="Utils.hideModal(); App.switchPage('pressing');">
+                    <span style="color: #1976d2; font-weight: 600;">${pressing.batchNo}</span>
+                    <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(pressing.crudeOilWeight || 0, 1)}kg毛油</span>
+                    <span style="color: #1976d2; font-size: 12px; margin-left: 8px;">← 来源压榨</span>
+                </div>
+            `;
+        } else {
+            sourceHtml = '<div style="color: #aaa; font-size: 13px;">无来源（直接过滤）</div>';
+        }
+
+        let targetHtml = '';
+        if (chain.target && chain.target.length > 0) {
+            targetHtml = chain.target.map(t => `
+                <div style="padding: 8px 12px; background: #f0f9eb; border-radius: 6px; margin-bottom: 6px; cursor: pointer;"
+                     onclick="Utils.hideModal(); App.switchPage('refining');">
+                    <span style="color: #689f38; font-weight: 600;">${t.batchNo}</span>
+                    <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(t.refinedOilWeight || 0, 1)}kg精炼油</span>
+                    <span style="color: #689f38; font-size: 12px; margin-left: 8px;">→ 精炼</span>
+                </div>
+            `).join('');
+        } else {
+            targetHtml = '<div style="color: #aaa; font-size: 13px;">暂无后续环节</div>';
+        }
+
         const rate = item.crudeOilWeight > 0 ? ((item.filteredOilWeight / item.crudeOilWeight) * 100).toFixed(2) : '0.00';
 
         const content = `
+            <div class="section-title">基本信息</div>
             <div class="info-grid">
                 <div class="info-item">
                     <span class="label">批次号</span>
@@ -295,13 +402,22 @@ const FilteringPage = {
                     <span class="value">${Utils.formatDateTime(item.createdAt)}</span>
                 </div>
             </div>
+
+            <div class="section-title" style="margin-top: 20px;">批次流转</div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px; margin-bottom: 12px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📥 来源批次</div>
+                ${sourceHtml}
+            </div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📤 流转去向</div>
+                ${targetHtml}
+            </div>
+
             ${item.remark ? `
-                <div class="form-group" style="margin-top: 16px;">
-                    <label>备注</label>
-                    <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
-                </div>
+                <div class="section-title" style="margin-top: 20px;">备注</div>
+                <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
             ` : ''}
-            <div class="modal-footer">
+            <div class="modal-footer" style="margin-top: 20px;">
                 <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
             </div>
         `;
@@ -313,6 +429,14 @@ const FilteringPage = {
         const item = Storage.findById('filteringRecords', id);
         if (!item) return;
 
+        const pressingList = (Storage.get('pressingRecords') || [])
+            .filter(p => p.status === 'completed' || p.id === item.pressingId);
+        const pressingOptions = pressingList.map(p => 
+            `<option value="${p.id}" ${p.id === item.pressingId ? 'selected' : ''}>
+                ${p.batchNo} - ${Utils.formatNumber(p.crudeOilWeight, 1)}kg毛油
+            </option>`
+        ).join('');
+
         const content = `
             <form id="filteringForm">
                 <div class="form-row">
@@ -321,21 +445,28 @@ const FilteringPage = {
                         <input type="text" name="batchNo" value="${item.batchNo}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
-                        <label>毛油重量(kg) *</label>
-                        <input type="number" name="crudeOilWeight" step="0.1" min="0" value="${item.crudeOilWeight}" required oninput="FilteringPage.calcSediment()">
+                        <label>来源压榨批次</label>
+                        <select name="pressingId">
+                            <option value="">直接过滤（无来源）</option>
+                            ${pressingOptions}
+                        </select>
                     </div>
                 </div>
                 <div class="form-row">
+                    <div class="form-group">
+                        <label>毛油重量(kg) *</label>
+                        <input type="number" id="filteringCrudeOil" name="crudeOilWeight" step="0.1" min="0" value="${item.crudeOilWeight}" required oninput="FilteringPage.calcSediment()">
+                    </div>
                     <div class="form-group">
                         <label>净油重量(kg) *</label>
-                        <input type="number" name="filteredOilWeight" step="0.1" min="0" value="${item.filteredOilWeight}" required oninput="FilteringPage.calcSediment()">
-                    </div>
-                    <div class="form-group">
-                        <label>油脚沉淀(kg)</label>
-                        <input type="text" name="sedimentWeight" value="${Utils.formatNumber(item.sedimentWeight, 1)} kg" readonly style="background: #f5f5f5;">
+                        <input type="number" id="filteringFilteredOil" name="filteredOilWeight" step="0.1" min="0" value="${item.filteredOilWeight}" required oninput="FilteringPage.calcSediment()">
                     </div>
                 </div>
                 <div class="form-row">
+                    <div class="form-group">
+                        <label>油脚沉淀(kg)</label>
+                        <input type="text" name="sedimentWeightDisplay" value="${Utils.formatNumber(item.sedimentWeight, 1)} kg" readonly style="background: #f5f5f5;">
+                    </div>
                     <div class="form-group">
                         <label>过滤方式</label>
                         <select name="filterMethod">
@@ -345,24 +476,24 @@ const FilteringPage = {
                             <option value="硅藻土过滤" ${item.filterMethod === '硅藻土过滤' ? 'selected' : ''}>硅藻土过滤</option>
                         </select>
                     </div>
+                </div>
+                <div class="form-row">
                     <div class="form-group">
                         <label>过滤时间(分钟)</label>
                         <input type="number" name="filterTime" min="0" value="${item.filterTime || 0}">
                     </div>
-                </div>
-                <div class="form-row">
                     <div class="form-group">
                         <label>操作人</label>
                         <input type="text" name="operator" value="${Utils.escapeHtml(item.operator || '')}">
                     </div>
-                    <div class="form-group">
-                        <label>状态</label>
-                        <select name="status">
-                            <option value="settling" ${item.status === 'settling' ? 'selected' : ''}>沉淀中</option>
-                            <option value="filtering" ${item.status === 'filtering' ? 'selected' : ''}>过滤中</option>
-                            <option value="completed" ${item.status === 'completed' ? 'selected' : ''}>已完成</option>
-                        </select>
-                    </div>
+                </div>
+                <div class="form-group">
+                    <label>状态</label>
+                    <select name="status">
+                        <option value="settling" ${item.status === 'settling' ? 'selected' : ''}>沉淀中</option>
+                        <option value="filtering" ${item.status === 'filtering' ? 'selected' : ''}>过滤中</option>
+                        <option value="completed" ${item.status === 'completed' ? 'selected' : ''}>已完成</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label>备注</label>
@@ -380,10 +511,20 @@ const FilteringPage = {
         const form = document.getElementById('filteringForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('filteringForm');
+
             const formData = new FormData(form);
             const crude = parseFloat(formData.get('crudeOilWeight')) || 0;
             const filtered = parseFloat(formData.get('filteredOilWeight')) || 0;
+
+            const oilCheck = Utils.validate.filteredOil(filtered, crude);
+            if (!oilCheck.valid) {
+                Utils.showFieldError('filteringFilteredOil', oilCheck.message);
+                return;
+            }
+
             const data = {
+                pressingId: formData.get('pressingId') || null,
                 crudeOilWeight: crude,
                 filteredOilWeight: filtered,
                 sedimentWeight: crude - filtered,
@@ -402,16 +543,18 @@ const FilteringPage = {
     },
 
     deleteRecord(id) {
-        if (!Utils.confirm('确定要删除这条过滤记录吗？')) return;
+        if (!Utils.confirm('确定要删除这条过滤记录吗？删除后无法恢复。')) return;
         Storage.delete('filteringRecords', id);
         Utils.toast('删除成功', 'success');
         this.refresh();
     },
 
     resetFilter() {
-        document.getElementById('filterMethod').value = '';
-        document.getElementById('filterDateStart').value = '';
-        document.getElementById('filterDateEnd').value = '';
+        this.filters = {
+            method: '',
+            dateStart: '',
+            dateEnd: ''
+        };
         this.refresh();
     },
 

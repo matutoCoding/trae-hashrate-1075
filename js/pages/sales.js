@@ -1,5 +1,12 @@
 const SalesPage = {
     currentTab: 'records',
+    filterConditions: {
+        keyword: '',
+        paymentMethod: '',
+        status: '',
+        dateStart: '',
+        dateEnd: ''
+    },
 
     render() {
         return `
@@ -53,29 +60,92 @@ const SalesPage = {
         `;
     },
 
-    renderRecordsTable() {
+    getFilteredRecords() {
         const records = Storage.get('salesRecords') || [];
-        const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        const { keyword, paymentMethod, status, dateStart, dateEnd } = this.filterConditions;
 
-        if (sorted.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">暂无销售记录</div></div>`;
+        return records.filter(item => {
+            if (keyword) {
+                const kw = keyword.toLowerCase();
+                const matchName = (item.customerName || '').toLowerCase().includes(kw);
+                const matchProduct = (item.productName || '').toLowerCase().includes(kw);
+                const matchPhone = (item.customerPhone || '').includes(kw);
+                const matchOrder = (item.orderNo || '').toLowerCase().includes(kw);
+                if (!matchName && !matchProduct && !matchPhone && !matchOrder) return false;
+            }
+
+            if (paymentMethod && item.paymentMethod !== paymentMethod) return false;
+
+            if (status && item.status !== status) return false;
+
+            if (dateStart && new Date(item.createdAt) < new Date(dateStart)) return false;
+            if (dateEnd) {
+                const end = new Date(dateEnd);
+                end.setHours(23, 59, 59, 999);
+                if (new Date(item.createdAt) > end) return false;
+            }
+
+            return true;
+        }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+
+    renderRecordsTable() {
+        const records = this.getFilteredRecords();
+
+        if (records.length === 0) {
+            return `
+                <div class="filter-bar">
+                    <input type="text" id="salesSearch" placeholder="搜索客户/产品/订单号..." style="width: 220px;">
+                    <select id="statusFilter">
+                        <option value="">全部状态</option>
+                        <option value="completed">已完成</option>
+                        <option value="pending">待付款</option>
+                        <option value="cancelled">已取消</option>
+                        <option value="refunded">已退款</option>
+                    </select>
+                    <select id="paymentFilter">
+                        <option value="">全部支付方式</option>
+                        <option value="微信">微信</option>
+                        <option value="支付宝">支付宝</option>
+                        <option value="现金">现金</option>
+                        <option value="银行卡">银行卡</option>
+                        <option value="赊账">赊账</option>
+                    </select>
+                    <input type="date" id="salesDateStart">
+                    <span>至</span>
+                    <input type="date" id="salesDateEnd">
+                    <button class="btn btn-secondary btn-sm" onclick="SalesPage.applyFilter()">查询</button>
+                    <button class="btn btn-secondary btn-sm" onclick="SalesPage.resetFilter()">重置</button>
+                </div>
+                <div class="empty-state">
+                    <div class="empty-state-icon">📊</div>
+                    <div class="empty-state-text">暂无销售记录</div>
+                </div>
+            `;
         }
 
         return `
             <div class="filter-bar">
-                <input type="text" id="salesSearch" placeholder="搜索客户/产品..." style="width: 200px;">
+                <input type="text" id="salesSearch" placeholder="搜索客户/产品/订单号..." style="width: 220px;" value="${Utils.escapeHtml(this.filterConditions.keyword)}">
+                <select id="statusFilter">
+                    <option value="">全部状态</option>
+                    <option value="completed" ${this.filterConditions.status === 'completed' ? 'selected' : ''}>已完成</option>
+                    <option value="pending" ${this.filterConditions.status === 'pending' ? 'selected' : ''}>待付款</option>
+                    <option value="cancelled" ${this.filterConditions.status === 'cancelled' ? 'selected' : ''}>已取消</option>
+                    <option value="refunded" ${this.filterConditions.status === 'refunded' ? 'selected' : ''}>已退款</option>
+                </select>
                 <select id="paymentFilter">
                     <option value="">全部支付方式</option>
-                    <option value="微信">微信</option>
-                    <option value="支付宝">支付宝</option>
-                    <option value="现金">现金</option>
-                    <option value="银行卡">银行卡</option>
-                    <option value="赊账">赊账</option>
+                    <option value="微信" ${this.filterConditions.paymentMethod === '微信' ? 'selected' : ''}>微信</option>
+                    <option value="支付宝" ${this.filterConditions.paymentMethod === '支付宝' ? 'selected' : ''}>支付宝</option>
+                    <option value="现金" ${this.filterConditions.paymentMethod === '现金' ? 'selected' : ''}>现金</option>
+                    <option value="银行卡" ${this.filterConditions.paymentMethod === '银行卡' ? 'selected' : ''}>银行卡</option>
+                    <option value="赊账" ${this.filterConditions.paymentMethod === '赊账' ? 'selected' : ''}>赊账</option>
                 </select>
-                <input type="date" id="salesDateStart">
+                <input type="date" id="salesDateStart" value="${this.filterConditions.dateStart}">
                 <span>至</span>
-                <input type="date" id="salesDateEnd">
-                <button class="btn btn-secondary btn-sm" onclick="SalesPage.refresh()">查询</button>
+                <input type="date" id="salesDateEnd" value="${this.filterConditions.dateEnd}">
+                <button class="btn btn-secondary btn-sm" onclick="SalesPage.applyFilter()">查询</button>
                 <button class="btn btn-secondary btn-sm" onclick="SalesPage.resetFilter()">重置</button>
             </div>
             <div class="table-container">
@@ -97,7 +167,7 @@ const SalesPage = {
                         </tr>
                     </thead>
                     <tbody>
-                        ${sorted.map(item => `
+                        ${records.map(item => `
                             <tr>
                                 <td>${item.orderNo}</td>
                                 <td>${Utils.formatDate(item.createdAt)}</td>
@@ -146,21 +216,28 @@ const SalesPage = {
                         </tr>
                     </thead>
                     <tbody>
-                        ${products.map(item => `
-                            <tr>
-                                <td>${Utils.escapeHtml(item.name)}</td>
-                                <td>${item.spec || '-'}</td>
-                                <td style="font-weight: 600; color: #ff9800;">${Utils.formatNumber(item.price, 2)}</td>
-                                <td>${item.stock || 0}</td>
-                                <td>${item.stock > 0 ? '<span class="badge badge-success">有货</span>' : '<span class="badge badge-warning">缺货</span>'}</td>
-                                <td>
-                                    <div class="action-buttons">
-                                        <button class="btn btn-secondary btn-sm" onclick="SalesPage.editProduct('${item.id}')">编辑</button>
-                                        <button class="btn btn-danger btn-sm" onclick="SalesPage.deleteProduct('${item.id}')">删除</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
+                        ${products.map(item => {
+                            const isLowStock = item.stock <= 10;
+                            return `
+                                <tr>
+                                    <td>${Utils.escapeHtml(item.name)}</td>
+                                    <td>${item.spec || '-'}</td>
+                                    <td style="font-weight: 600; color: #ff9800;">${Utils.formatNumber(item.price, 2)}</td>
+                                    <td style="font-weight: 600; color: ${isLowStock ? '#f44336' : '#333'};">${item.stock || 0}</td>
+                                    <td>
+                                        ${item.stock > 10 ? '<span class="badge badge-success">有货</span>' : 
+                                          item.stock > 0 ? '<span class="badge badge-warning">库存低</span>' : 
+                                          '<span class="badge badge-danger">缺货</span>'}
+                                    </td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn btn-secondary btn-sm" onclick="SalesPage.editProduct('${item.id}')">编辑</button>
+                                            <button class="btn btn-danger btn-sm" onclick="SalesPage.deleteProduct('${item.id}')">删除</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -171,7 +248,7 @@ const SalesPage = {
         const records = Storage.get('salesRecords') || [];
         const monthlyData = {};
 
-        records.forEach(r => {
+        records.filter(r => r.status !== 'cancelled' && r.status !== 'refunded').forEach(r => {
             const month = Utils.formatDate(r.createdAt, 'YYYY-MM');
             if (!monthlyData[month]) {
                 monthlyData[month] = { amount: 0, count: 0 };
@@ -260,6 +337,26 @@ const SalesPage = {
         this.refresh();
     },
 
+    applyFilter() {
+        this.filterConditions.keyword = document.getElementById('salesSearch').value.trim();
+        this.filterConditions.paymentMethod = document.getElementById('paymentFilter').value;
+        this.filterConditions.status = document.getElementById('statusFilter').value;
+        this.filterConditions.dateStart = document.getElementById('salesDateStart').value;
+        this.filterConditions.dateEnd = document.getElementById('salesDateEnd').value;
+        this.refresh();
+    },
+
+    resetFilter() {
+        this.filterConditions = {
+            keyword: '',
+            paymentMethod: '',
+            status: '',
+            dateStart: '',
+            dateEnd: ''
+        };
+        this.refresh();
+    },
+
     openAddModal() {
         if (this.currentTab === 'records') {
             this.openSaleModal();
@@ -271,7 +368,9 @@ const SalesPage = {
     openSaleModal() {
         const products = Storage.get('products') || [];
         const productOptions = products.map(p => 
-            `<option value="${p.id}" data-price="${p.price}" data-spec="${p.spec}" data-name="${p.name}">${p.name} (${p.spec}) - ¥${p.price}</option>`
+            `<option value="${p.id}" data-price="${p.price}" data-spec="${p.spec}" data-name="${p.name}" data-stock="${p.stock || 0}">
+                ${p.name} (${p.spec}) - ¥${p.price} - 库存${p.stock || 0}瓶
+            </option>`
         ).join('');
 
         const content = `
@@ -283,34 +382,34 @@ const SalesPage = {
                     </div>
                     <div class="form-group">
                         <label>客户姓名 *</label>
-                        <input type="text" name="customerName" required>
+                        <input type="text" id="customerName" name="customerName" required>
                     </div>
                 </div>
                 <div class="form-group">
                     <label>联系电话</label>
-                    <input type="tel" name="customerPhone">
+                    <input type="tel" id="customerPhone" name="customerPhone">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>产品 *</label>
-                        <select name="productId" required onchange="SalesPage.onProductChange()">
+                        <select id="productSelect" name="productId" required onchange="SalesPage.onProductChange()">
                             <option value="">请选择产品</option>
                             ${productOptions}
                         </select>
                     </div>
                     <div class="form-group">
                         <label>数量(瓶) *</label>
-                        <input type="number" name="quantity" min="1" value="1" required oninput="SalesPage.calcTotal()">
+                        <input type="number" id="saleQuantity" name="quantity" min="1" value="1" required oninput="SalesPage.calcTotal()">
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>单价(元)</label>
-                        <input type="number" name="unitPrice" step="0.01" min="0" value="0" oninput="SalesPage.calcTotal()">
+                        <input type="number" id="saleUnitPrice" name="unitPrice" step="0.01" min="0" value="0" oninput="SalesPage.calcTotal()">
                     </div>
                     <div class="form-group">
                         <label>总金额(元)</label>
-                        <input type="text" name="totalAmount" readonly style="background: #f5f5f5; color: #689f38; font-weight: 700;">
+                        <input type="text" id="saleTotalAmount" name="totalAmount" readonly style="background: #f5f5f5; color: #689f38; font-weight: 700;">
                     </div>
                 </div>
                 <div class="form-row">
@@ -326,7 +425,7 @@ const SalesPage = {
                     </div>
                     <div class="form-group">
                         <label>状态</label>
-                        <select name="status">
+                        <select id="saleStatus" name="status">
                             <option value="completed">已完成</option>
                             <option value="pending">待付款</option>
                         </select>
@@ -348,11 +447,40 @@ const SalesPage = {
         const form = document.getElementById('saleForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('saleForm');
+
             const formData = new FormData(form);
             const productId = formData.get('productId');
             const product = products.find(p => p.id === productId);
             const quantity = parseInt(formData.get('quantity')) || 0;
             const unitPrice = parseFloat(formData.get('unitPrice')) || 0;
+            const status = formData.get('status');
+
+            const nameCheck = Utils.validate.notEmpty(formData.get('customerName'), '客户姓名');
+            if (!nameCheck.valid) {
+                Utils.showFieldError('customerName', nameCheck.message);
+                return;
+            }
+
+            const phoneCheck = Utils.validate.phone(formData.get('customerPhone'));
+            if (!phoneCheck.valid) {
+                Utils.showFieldError('customerPhone', phoneCheck.message);
+                return;
+            }
+
+            const qtyCheck = Utils.validate.positiveNumber(quantity, '数量');
+            if (!qtyCheck.valid) {
+                Utils.showFieldError('saleQuantity', qtyCheck.message);
+                return;
+            }
+
+            if (status === 'completed') {
+                const stockResult = Storage.updateProductStock(productId, -quantity, `销售出库 - 订单 ${formData.get('orderNo')}`);
+                if (!stockResult.success) {
+                    Utils.showFieldError('saleQuantity', stockResult.message || '库存不足');
+                    return;
+                }
+            }
 
             const data = {
                 orderNo: formData.get('orderNo'),
@@ -365,7 +493,8 @@ const SalesPage = {
                 unitPrice: unitPrice,
                 totalAmount: quantity * unitPrice,
                 paymentMethod: formData.get('paymentMethod'),
-                status: formData.get('status'),
+                status: status,
+                stockDeducted: status === 'completed',
                 remark: formData.get('remark')
             };
 
@@ -373,6 +502,7 @@ const SalesPage = {
             Utils.hideModal();
             Utils.toast('保存成功', 'success');
             this.refresh();
+            App.updateSidebarStats();
         });
     },
 
@@ -401,6 +531,8 @@ const SalesPage = {
     viewRecord(id) {
         const item = Storage.findById('salesRecords', id);
         if (!item) return;
+
+        const product = item.productId ? Storage.findById('products', item.productId) : null;
 
         const content = `
             <div class="info-grid">
@@ -445,17 +577,26 @@ const SalesPage = {
                     <span class="value">${this.getPaymentBadge(item.paymentMethod)}</span>
                 </div>
                 <div class="info-item">
+                    <span class="label">库存扣减</span>
+                    <span class="value">${item.stockDeducted ? '<span class="badge badge-success">已扣减</span>' : '<span class="badge badge-warning">未扣减</span>'}</span>
+                </div>
+                <div class="info-item">
                     <span class="label">销售时间</span>
                     <span class="value">${Utils.formatDateTime(item.createdAt)}</span>
                 </div>
             </div>
-            ${item.remark ? `
-                <div class="form-group" style="margin-top: 16px;">
-                    <label>备注</label>
-                    <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
+            ${product ? `
+                <div class="section-title" style="margin-top: 20px;">产品库存</div>
+                <div style="padding: 12px; background: #f5f7fa; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #666;">当前库存：</span>
+                    <span style="font-weight: 700; font-size: 18px; color: ${product.stock > 10 ? '#689f38' : product.stock > 0 ? '#ff9800' : '#f44336'};">${product.stock || 0} 瓶</span>
                 </div>
             ` : ''}
-            <div class="modal-footer">
+            ${item.remark ? `
+                <div class="section-title" style="margin-top: 20px;">备注</div>
+                <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
+            ` : ''}
+            <div class="modal-footer" style="margin-top: 20px;">
                 <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
             </div>
         `;
@@ -469,7 +610,9 @@ const SalesPage = {
 
         const products = Storage.get('products') || [];
         const productOptions = products.map(p => 
-            `<option value="${p.id}" data-price="${p.price}" data-spec="${p.spec}" data-name="${p.name}" ${p.id === item.productId ? 'selected' : ''}>${p.name} (${p.spec}) - ¥${p.price}</option>`
+            `<option value="${p.id}" data-price="${p.price}" data-spec="${p.spec}" data-name="${p.name}" data-stock="${p.stock || 0}" ${p.id === item.productId ? 'selected' : ''}>
+                ${p.name} (${p.spec}) - ¥${p.price} - 库存${p.stock || 0}瓶
+            </option>`
         ).join('');
 
         const content = `
@@ -481,34 +624,34 @@ const SalesPage = {
                     </div>
                     <div class="form-group">
                         <label>客户姓名 *</label>
-                        <input type="text" name="customerName" value="${Utils.escapeHtml(item.customerName)}" required>
+                        <input type="text" id="customerName" name="customerName" value="${Utils.escapeHtml(item.customerName)}" required>
                     </div>
                 </div>
                 <div class="form-group">
                     <label>联系电话</label>
-                    <input type="tel" name="customerPhone" value="${Utils.escapeHtml(item.customerPhone || '')}">
+                    <input type="tel" id="customerPhone" name="customerPhone" value="${Utils.escapeHtml(item.customerPhone || '')}">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>产品 *</label>
-                        <select name="productId" required onchange="SalesPage.onProductChange()">
+                        <select id="productSelect" name="productId" required onchange="SalesPage.onProductChange()">
                             <option value="">请选择产品</option>
                             ${productOptions}
                         </select>
                     </div>
                     <div class="form-group">
                         <label>数量(瓶) *</label>
-                        <input type="number" name="quantity" min="1" value="${item.quantity}" required oninput="SalesPage.calcTotal()">
+                        <input type="number" id="saleQuantity" name="quantity" min="1" value="${item.quantity}" required oninput="SalesPage.calcTotal()">
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>单价(元)</label>
-                        <input type="number" name="unitPrice" step="0.01" min="0" value="${item.unitPrice}" oninput="SalesPage.calcTotal()">
+                        <input type="number" id="saleUnitPrice" name="unitPrice" step="0.01" min="0" value="${item.unitPrice}" oninput="SalesPage.calcTotal()">
                     </div>
                     <div class="form-group">
                         <label>总金额(元)</label>
-                        <input type="text" name="totalAmount" value="${Utils.formatNumber(item.totalAmount, 2)}" readonly style="background: #f5f5f5; color: #689f38; font-weight: 700;">
+                        <input type="text" id="saleTotalAmount" name="totalAmount" value="${Utils.formatNumber(item.totalAmount, 2)}" readonly style="background: #f5f5f5; color: #689f38; font-weight: 700;">
                     </div>
                 </div>
                 <div class="form-row">
@@ -524,7 +667,7 @@ const SalesPage = {
                     </div>
                     <div class="form-group">
                         <label>状态</label>
-                        <select name="status">
+                        <select id="saleStatus" name="status">
                             <option value="completed" ${item.status === 'completed' ? 'selected' : ''}>已完成</option>
                             <option value="pending" ${item.status === 'pending' ? 'selected' : ''}>待付款</option>
                             <option value="cancelled" ${item.status === 'cancelled' ? 'selected' : ''}>已取消</option>
@@ -548,23 +691,64 @@ const SalesPage = {
         const form = document.getElementById('saleForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('saleForm');
+
             const formData = new FormData(form);
             const productId = formData.get('productId');
             const product = products.find(p => p.id === productId);
             const quantity = parseInt(formData.get('quantity')) || 0;
             const unitPrice = parseFloat(formData.get('unitPrice')) || 0;
+            const newStatus = formData.get('status');
+
+            const nameCheck = Utils.validate.notEmpty(formData.get('customerName'), '客户姓名');
+            if (!nameCheck.valid) {
+                Utils.showFieldError('customerName', nameCheck.message);
+                return;
+            }
+
+            const qtyCheck = Utils.validate.positiveNumber(quantity, '数量');
+            if (!qtyCheck.valid) {
+                Utils.showFieldError('saleQuantity', qtyCheck.message);
+                return;
+            }
+
+            const oldStatus = item.status;
+            const oldStockDeducted = item.stockDeducted;
+            const newStockDeducted = newStatus === 'completed';
+            const productChanged = productId !== item.productId;
+            const quantityChanged = quantity !== item.quantity;
+
+            if (oldStockDeducted && (productChanged || quantityChanged || !newStockDeducted)) {
+                const rollbackResult = Storage.updateProductStock(item.productId, item.quantity, `销售回滚 - 订单 ${item.orderNo}`);
+                if (!rollbackResult.success) {
+                    Utils.toast('库存回滚失败', 'error');
+                    return;
+                }
+            }
+
+            if (newStockDeducted && (!oldStockDeducted || productChanged || quantityChanged)) {
+                const deductResult = Storage.updateProductStock(productId, -quantity, `销售出库 - 订单 ${item.orderNo}`);
+                if (!deductResult.success) {
+                    Utils.showFieldError('saleQuantity', deductResult.message || '库存不足');
+                    if (oldStockDeducted && (productChanged || quantityChanged)) {
+                        Storage.updateProductStock(item.productId, -item.quantity, `销售恢复 - 订单 ${item.orderNo}`);
+                    }
+                    return;
+                }
+            }
 
             const data = {
                 customerName: formData.get('customerName'),
                 customerPhone: formData.get('customerPhone'),
                 productId: productId,
-                productName: product ? product.name : form.productId.selectedOptions[0]?.text.split(' (')[0] || '',
+                productName: product ? product.name : '',
                 spec: product ? product.spec : '',
                 quantity: quantity,
                 unitPrice: unitPrice,
                 totalAmount: quantity * unitPrice,
                 paymentMethod: formData.get('paymentMethod'),
-                status: formData.get('status'),
+                status: newStatus,
+                stockDeducted: newStockDeducted,
                 remark: formData.get('remark')
             };
 
@@ -572,14 +756,24 @@ const SalesPage = {
             Utils.hideModal();
             Utils.toast('更新成功', 'success');
             this.refresh();
+            App.updateSidebarStats();
         });
     },
 
     deleteRecord(id) {
-        if (!Utils.confirm('确定要删除这条销售记录吗？')) return;
+        const item = Storage.findById('salesRecords', id);
+        if (!item) return;
+
+        if (!Utils.confirm('确定要删除这条销售记录吗？删除后库存将自动恢复。')) return;
+
+        if (item.stockDeducted && item.productId) {
+            Storage.updateProductStock(item.productId, item.quantity, `销售删除回滚 - 订单 ${item.orderNo}`);
+        }
+
         Storage.delete('salesRecords', id);
         Utils.toast('删除成功', 'success');
         this.refresh();
+        App.updateSidebarStats();
     },
 
     openProductModal() {
@@ -587,7 +781,7 @@ const SalesPage = {
             <form id="productForm">
                 <div class="form-group">
                     <label>产品名称 *</label>
-                    <input type="text" name="name" required>
+                    <input type="text" id="productName" name="name" required>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -596,7 +790,7 @@ const SalesPage = {
                     </div>
                     <div class="form-group">
                         <label>单价(元) *</label>
-                        <input type="number" name="price" step="0.01" min="0" required>
+                        <input type="number" id="productPrice" name="price" step="0.01" min="0" required>
                     </div>
                 </div>
                 <div class="form-group">
@@ -619,11 +813,28 @@ const SalesPage = {
         const form = document.getElementById('productForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('productForm');
+
             const formData = new FormData(form);
+            const name = formData.get('name');
+            const price = parseFloat(formData.get('price')) || 0;
+
+            const nameCheck = Utils.validate.notEmpty(name, '产品名称');
+            if (!nameCheck.valid) {
+                Utils.showFieldError('productName', nameCheck.message);
+                return;
+            }
+
+            const priceCheck = Utils.validate.positiveNumber(price, '单价');
+            if (!priceCheck.valid) {
+                Utils.showFieldError('productPrice', priceCheck.message);
+                return;
+            }
+
             const data = {
-                name: formData.get('name'),
+                name: name,
                 spec: formData.get('spec'),
-                price: parseFloat(formData.get('price')) || 0,
+                price: price,
                 stock: parseInt(formData.get('stock')) || 0,
                 description: formData.get('description')
             };
@@ -643,7 +854,7 @@ const SalesPage = {
             <form id="productForm">
                 <div class="form-group">
                     <label>产品名称 *</label>
-                    <input type="text" name="name" value="${Utils.escapeHtml(product.name)}" required>
+                    <input type="text" id="productName" name="name" value="${Utils.escapeHtml(product.name)}" required>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -652,7 +863,7 @@ const SalesPage = {
                     </div>
                     <div class="form-group">
                         <label>单价(元) *</label>
-                        <input type="number" name="price" step="0.01" min="0" value="${product.price}" required>
+                        <input type="number" id="productPrice" name="price" step="0.01" min="0" value="${product.price}" required>
                     </div>
                 </div>
                 <div class="form-group">
@@ -675,11 +886,28 @@ const SalesPage = {
         const form = document.getElementById('productForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('productForm');
+
             const formData = new FormData(form);
+            const name = formData.get('name');
+            const price = parseFloat(formData.get('price')) || 0;
+
+            const nameCheck = Utils.validate.notEmpty(name, '产品名称');
+            if (!nameCheck.valid) {
+                Utils.showFieldError('productName', nameCheck.message);
+                return;
+            }
+
+            const priceCheck = Utils.validate.positiveNumber(price, '单价');
+            if (!priceCheck.valid) {
+                Utils.showFieldError('productPrice', priceCheck.message);
+                return;
+            }
+
             const data = {
-                name: formData.get('name'),
+                name: name,
                 spec: formData.get('spec'),
-                price: parseFloat(formData.get('price')) || 0,
+                price: price,
                 stock: parseInt(formData.get('stock')) || 0,
                 description: formData.get('description')
             };
@@ -692,17 +920,19 @@ const SalesPage = {
     },
 
     deleteProduct(id) {
+        const product = Storage.findById('products', id);
+        if (!product) return;
+
+        const salesRecords = Storage.get('salesRecords') || [];
+        const used = salesRecords.some(r => r.productId === id);
+        if (used) {
+            Utils.toast('该产品已有销售记录，无法删除', 'error');
+            return;
+        }
+
         if (!Utils.confirm('确定要删除这个产品吗？')) return;
         Storage.delete('products', id);
         Utils.toast('删除成功', 'success');
-        this.refresh();
-    },
-
-    resetFilter() {
-        document.getElementById('salesSearch').value = '';
-        document.getElementById('paymentFilter').value = '';
-        document.getElementById('salesDateStart').value = '';
-        document.getElementById('salesDateEnd').value = '';
         this.refresh();
     },
 

@@ -138,23 +138,51 @@ const App = {
         pageInstance.init();
     },
 
+    goToPage(pageName) {
+        if (this.pages[pageName]) {
+            this.switchPage(pageName);
+        }
+    },
+
     updateSidebarStats() {
         const purchases = Storage.get('purchases') || [];
         const pressing = Storage.get('pressingRecords') || [];
+        const bottling = Storage.get('bottlingRecords') || [];
+        const sales = Storage.get('salesRecords') || [];
+        const products = Storage.get('products') || [];
         
         const today = new Date();
         const todayStr = today.toDateString();
 
         const todayPurchaseWeight = purchases
-            .filter(p => new Date(p.createdAt).toDateString() === todayStr && p.type === 'buy')
+            .filter(p => Utils.isToday(p.createdAt) && p.type === 'buy')
             .reduce((sum, p) => sum + (p.weight || 0), 0);
 
         const todayOilWeight = pressing
-            .filter(p => new Date(p.createdAt).toDateString() === todayStr)
+            .filter(p => Utils.isToday(p.createdAt))
             .reduce((sum, p) => sum + (p.crudeOilWeight || 0), 0);
 
-        document.getElementById('todayPurchase').textContent = Utils.formatNumber(todayPurchaseWeight, 1) + ' kg';
-        document.getElementById('todayOil').textContent = Utils.formatNumber(todayOilWeight, 1) + ' kg';
+        const todayBottlingCount = bottling
+            .filter(b => Utils.isToday(b.createdAt) && b.status === 'completed')
+            .reduce((sum, b) => sum + (b.bottleCount || 0), 0);
+
+        const todaySalesAmount = sales
+            .filter(s => Utils.isToday(s.createdAt) && s.status !== 'cancelled' && s.status !== 'refunded')
+            .reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+
+        const lowStockCount = products.filter(p => (p.stock || 0) <= 10).length;
+
+        const purchaseEl = document.getElementById('todayPurchase');
+        const oilEl = document.getElementById('todayOil');
+        const bottlingEl = document.getElementById('todayBottling');
+        const salesEl = document.getElementById('todaySales');
+        const warningEl = document.getElementById('stockWarning');
+
+        if (purchaseEl) purchaseEl.textContent = Utils.formatNumber(todayPurchaseWeight, 1) + ' kg';
+        if (oilEl) oilEl.textContent = Utils.formatNumber(todayOilWeight, 1) + ' kg';
+        if (bottlingEl) bottlingEl.textContent = todayBottlingCount + ' 瓶';
+        if (salesEl) salesEl.textContent = Utils.formatMoney(todaySalesAmount);
+        if (warningEl) warningEl.textContent = lowStockCount + ' 种';
     }
 };
 

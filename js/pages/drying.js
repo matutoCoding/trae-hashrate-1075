@@ -53,8 +53,9 @@ const DryingPage = {
 
     renderDryingTable() {
         const records = Storage.get('dryingRecords') || [];
+        const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        if (records.length === 0) {
+        if (sorted.length === 0) {
             return `<div class="empty-state"><div class="empty-state-icon">☀️</div><div class="empty-state-text">暂无晾晒记录</div></div>`;
         }
 
@@ -64,36 +65,39 @@ const DryingPage = {
                     <thead>
                         <tr>
                             <th>批次号</th>
+                            <th>来源批次</th>
                             <th>茶籽重量(kg)</th>
                             <th>初始含水率(%)</th>
                             <th>当前含水率(%)</th>
                             <th>目标含水率(%)</th>
                             <th>晾晒方式</th>
-                            <th>开始时间</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${records.map(item => `
-                            <tr>
-                                <td>${item.batchNo}</td>
-                                <td>${Utils.formatNumber(item.seedWeight, 1)}</td>
-                                <td>${Utils.formatNumber(item.initialMoisture, 1)}</td>
-                                <td style="font-weight: 600; color: ${item.currentMoisture <= item.targetMoisture ? '#4caf50' : '#ff9800'};">${Utils.formatNumber(item.currentMoisture, 1)}</td>
-                                <td>${Utils.formatNumber(item.targetMoisture, 1)}</td>
-                                <td>${item.dryingMethod}</td>
-                                <td>${Utils.formatDateTime(item.startTime)}</td>
-                                <td>${this.getDryingStatusBadge(item.status)}</td>
-                                <td>
-                                    <div class="action-buttons">
-                                        <button class="btn btn-outline btn-sm" onclick="DryingPage.updateMoisture('${item.id}')">更新水分</button>
-                                        <button class="btn btn-secondary btn-sm" onclick="DryingPage.editDrying('${item.id}')">编辑</button>
-                                        <button class="btn btn-danger btn-sm" onclick="DryingPage.deleteDrying('${item.id}')">删除</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
+                        ${sorted.map(item => {
+                            const purchase = item.purchaseId ? Storage.findById('purchases', item.purchaseId) : null;
+                            return `
+                                <tr>
+                                    <td>${item.batchNo}</td>
+                                    <td>${purchase ? Utils.escapeHtml(purchase.farmerName) : '直接入库'}</td>
+                                    <td>${Utils.formatNumber(item.seedWeight, 1)}</td>
+                                    <td>${Utils.formatNumber(item.initialMoisture, 1)}</td>
+                                    <td style="font-weight: 600; color: ${item.currentMoisture <= item.targetMoisture ? '#4caf50' : '#ff9800'};">${Utils.formatNumber(item.currentMoisture, 1)}</td>
+                                    <td>${Utils.formatNumber(item.targetMoisture, 1)}</td>
+                                    <td>${item.dryingMethod}</td>
+                                    <td>${this.getDryingStatusBadge(item.status)}</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn btn-outline btn-sm" onclick="DryingPage.viewDrying('${item.id}')">查看</button>
+                                            <button class="btn btn-secondary btn-sm" onclick="DryingPage.updateMoisture('${item.id}')">更新水分</button>
+                                            <button class="btn btn-danger btn-sm" onclick="DryingPage.deleteDrying('${item.id}')">删除</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -102,8 +106,9 @@ const DryingPage = {
 
     renderShellingTable() {
         const records = Storage.get('shellingRecords') || [];
+        const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        if (records.length === 0) {
+        if (sorted.length === 0) {
             return `<div class="empty-state"><div class="empty-state-icon">🌰</div><div class="empty-state-text">暂无剥壳记录</div></div>`;
         }
 
@@ -113,38 +118,39 @@ const DryingPage = {
                     <thead>
                         <tr>
                             <th>批次号</th>
+                            <th>来源批次</th>
                             <th>茶籽重量(kg)</th>
                             <th>壳重(kg)</th>
                             <th>仁重(kg)</th>
                             <th>出仁率(%)</th>
-                            <th>含杂率(%)</th>
                             <th>操作人</th>
-                            <th>时间</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${records.map(item => `
-                            <tr>
-                                <td>${item.batchNo}</td>
-                                <td>${Utils.formatNumber(item.seedWeight, 1)}</td>
-                                <td>${Utils.formatNumber(item.shellWeight, 1)}</td>
-                                <td>${Utils.formatNumber(item.kernelWeight, 1)}</td>
-                                <td style="font-weight: 600; color: #689f38;">${Utils.formatNumber(item.shellingRate, 1)}</td>
-                                <td>${Utils.formatNumber(item.impurityRate, 2)}</td>
-                                <td>${Utils.escapeHtml(item.operator || '-')}</td>
-                                <td>${Utils.formatDateTime(item.createdAt)}</td>
-                                <td>${this.getShellingStatusBadge(item.status)}</td>
-                                <td>
-                                    <div class="action-buttons">
-                                        <button class="btn btn-outline btn-sm" onclick="DryingPage.viewShellingDetail('${item.id}')">查看</button>
-                                        <button class="btn btn-secondary btn-sm" onclick="DryingPage.editShelling('${item.id}')">编辑</button>
-                                        <button class="btn btn-danger btn-sm" onclick="DryingPage.deleteShelling('${item.id}')">删除</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
+                        ${sorted.map(item => {
+                            const drying = item.dryingId ? Storage.findById('dryingRecords', item.dryingId) : null;
+                            return `
+                                <tr>
+                                    <td>${item.batchNo}</td>
+                                    <td>${drying ? drying.batchNo : '直接剥壳'}</td>
+                                    <td>${Utils.formatNumber(item.seedWeight, 1)}</td>
+                                    <td>${Utils.formatNumber(item.shellWeight, 1)}</td>
+                                    <td>${Utils.formatNumber(item.kernelWeight, 1)}</td>
+                                    <td style="font-weight: 600; color: #689f38;">${Utils.formatNumber(item.shellingRate, 1)}</td>
+                                    <td>${Utils.escapeHtml(item.operator || '-')}</td>
+                                    <td>${this.getShellingStatusBadge(item.status)}</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn btn-outline btn-sm" onclick="DryingPage.viewShelling('${item.id}')">查看</button>
+                                            <button class="btn btn-secondary btn-sm" onclick="DryingPage.editShelling('${item.id}')">编辑</button>
+                                            <button class="btn btn-danger btn-sm" onclick="DryingPage.deleteShelling('${item.id}')">删除</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -206,6 +212,14 @@ const DryingPage = {
     },
 
     openDryingModal() {
+        const purchases = (Storage.get('purchases') || [])
+            .filter(p => p.status === 'completed');
+        const purchaseOptions = purchases.map(p => 
+            `<option value="${p.id}" data-weight="${p.weight}" data-moisture="${p.moisture}" data-farmer="${p.farmerName}">
+                ${p.farmerName} - ${Utils.formatNumber(p.weight, 1)}kg
+            </option>`
+        ).join('');
+
         const content = `
             <form id="dryingForm">
                 <div class="form-row">
@@ -214,27 +228,37 @@ const DryingPage = {
                         <input type="text" name="batchNo" value="${Utils.generateBatchNo('GZ')}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
-                        <label>茶籽重量(kg) *</label>
-                        <input type="number" name="seedWeight" step="0.1" min="0" required>
+                        <label>来源收购批次</label>
+                        <select id="purchaseSelect" name="purchaseId" onchange="DryingPage.onPurchaseChange()">
+                            <option value="">直接入库（无来源）</option>
+                            ${purchaseOptions}
+                        </select>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>初始含水率(%) *</label>
-                        <input type="number" name="initialMoisture" step="0.1" min="0" max="100" value="15" required>
+                        <label>茶籽重量(kg) *</label>
+                        <input type="number" id="dryingSeedWeight" name="seedWeight" step="0.1" min="0" required>
                     </div>
                     <div class="form-group">
-                        <label>目标含水率(%) *</label>
-                        <input type="number" name="targetMoisture" step="0.1" min="0" max="100" value="8" required>
+                        <label>初始含水率(%) *</label>
+                        <input type="number" id="dryingInitialMoisture" name="initialMoisture" step="0.1" min="0" max="100" value="12" required
+                               onblur="DryingPage.validateMoisture('dryingInitialMoisture')">
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>晾晒方式</label>
-                    <select name="dryingMethod">
-                        <option value="自然晾晒">自然晾晒</option>
-                        <option value="烘干房">烘干房</option>
-                        <option value="烘干机">烘干机</option>
-                    </select>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>目标含水率(%) *</label>
+                        <input type="number" id="dryingTargetMoisture" name="targetMoisture" step="0.1" min="0" max="100" value="8" required>
+                    </div>
+                    <div class="form-group">
+                        <label>晾晒方式</label>
+                        <select name="dryingMethod">
+                            <option value="自然晾晒">自然晾晒</option>
+                            <option value="烘干房">烘干房</option>
+                            <option value="烘干机">烘干机</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>状态</label>
@@ -260,13 +284,37 @@ const DryingPage = {
         const form = document.getElementById('dryingForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('dryingForm');
+
             const formData = new FormData(form);
+            const seedWeight = parseFloat(formData.get('seedWeight')) || 0;
+            const initialMoisture = parseFloat(formData.get('initialMoisture')) || 0;
+            const targetMoisture = parseFloat(formData.get('targetMoisture')) || 0;
+
+            const weightCheck = Utils.validate.positiveNumber(seedWeight, '茶籽重量');
+            if (!weightCheck.valid) {
+                Utils.showFieldError('dryingSeedWeight', weightCheck.message);
+                return;
+            }
+
+            const moistureCheck = Utils.validate.moisture(initialMoisture);
+            if (!moistureCheck.valid) {
+                Utils.showFieldError('dryingInitialMoisture', moistureCheck.message);
+                return;
+            }
+
+            if (targetMoisture >= initialMoisture) {
+                Utils.toast('目标含水率不能大于初始含水率', 'error');
+                return;
+            }
+
             const data = {
                 batchNo: formData.get('batchNo'),
-                seedWeight: parseFloat(formData.get('seedWeight')) || 0,
-                initialMoisture: parseFloat(formData.get('initialMoisture')) || 0,
-                currentMoisture: parseFloat(formData.get('initialMoisture')) || 0,
-                targetMoisture: parseFloat(formData.get('targetMoisture')) || 0,
+                purchaseId: formData.get('purchaseId') || null,
+                seedWeight: seedWeight,
+                initialMoisture: initialMoisture,
+                currentMoisture: initialMoisture,
+                targetMoisture: targetMoisture,
                 dryingMethod: formData.get('dryingMethod'),
                 status: formData.get('status'),
                 startTime: new Date().toISOString(),
@@ -278,6 +326,128 @@ const DryingPage = {
             Utils.toast('保存成功', 'success');
             this.refresh();
         });
+    },
+
+    onPurchaseChange() {
+        const select = document.getElementById('purchaseSelect');
+        const option = select.options[select.selectedIndex];
+        const weightInput = document.getElementById('dryingSeedWeight');
+        const moistureInput = document.getElementById('dryingInitialMoisture');
+
+        if (option && option.dataset.weight) {
+            weightInput.value = option.dataset.weight;
+            if (option.dataset.moisture) {
+                moistureInput.value = option.dataset.moisture;
+            }
+        }
+    },
+
+    validateMoisture(fieldId) {
+        const input = document.getElementById(fieldId);
+        if (!input) return;
+        const value = parseFloat(input.value) || 0;
+        const result = Utils.validate.moisture(value);
+        if (!result.valid) {
+            Utils.showFieldError(fieldId, result.message);
+        } else if (result.warning) {
+            Utils.showFieldError(fieldId, result.warning, 'warning');
+        } else {
+            Utils.showFieldError(fieldId, '');
+        }
+    },
+
+    viewDrying(id) {
+        const item = Storage.findById('dryingRecords', id);
+        if (!item) return;
+
+        const chain = Storage.getBatchChain('dryingRecords', id);
+        const purchase = chain.source;
+
+        let sourceHtml = '';
+        if (purchase) {
+            sourceHtml = `
+                <div style="padding: 8px 12px; background: #e8f4fd; border-radius: 6px; cursor: pointer;"
+                     onclick="Utils.hideModal(); App.switchPage('purchase');">
+                    <span style="color: #1976d2; font-weight: 600;">${Utils.escapeHtml(purchase.farmerName)}</span>
+                    <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(purchase.weight, 1)}kg</span>
+                    <span style="color: #1976d2; font-size: 12px; margin-left: 8px;">← 来源收购</span>
+                </div>
+            `;
+        } else {
+            sourceHtml = '<div style="color: #aaa; font-size: 13px;">无来源（直接入库）</div>';
+        }
+
+        let targetHtml = '';
+        if (chain.target && chain.target.length > 0) {
+            targetHtml = chain.target.map(t => `
+                <div style="padding: 8px 12px; background: #f0f9eb; border-radius: 6px; margin-bottom: 6px; cursor: pointer;"
+                     onclick="Utils.hideModal(); App.switchPage('drying');">
+                    <span style="color: #689f38; font-weight: 600;">${t.batchNo}</span>
+                    <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(t.seedWeight || 0, 1)}kg</span>
+                    <span style="color: #689f38; font-size: 12px; margin-left: 8px;">→ 剥壳</span>
+                </div>
+            `).join('');
+        } else {
+            targetHtml = '<div style="color: #aaa; font-size: 13px;">暂无后续环节</div>';
+        }
+
+        const content = `
+            <div class="section-title">基本信息</div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="label">批次号</span>
+                    <span class="value">${item.batchNo}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">状态</span>
+                    <span class="value">${this.getDryingStatusBadge(item.status)}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">茶籽重量</span>
+                    <span class="value">${Utils.formatNumber(item.seedWeight, 1)} kg</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">晾晒方式</span>
+                    <span class="value">${item.dryingMethod}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">初始含水率</span>
+                    <span class="value">${Utils.formatNumber(item.initialMoisture, 1)} %</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">当前含水率</span>
+                    <span class="value" style="color: ${item.currentMoisture <= item.targetMoisture ? '#4caf50' : '#ff9800'}; font-weight: 600;">${Utils.formatNumber(item.currentMoisture, 1)} %</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">目标含水率</span>
+                    <span class="value">${Utils.formatNumber(item.targetMoisture, 1)} %</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">开始时间</span>
+                    <span class="value">${Utils.formatDateTime(item.startTime)}</span>
+                </div>
+            </div>
+
+            <div class="section-title" style="margin-top: 20px;">批次流转</div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px; margin-bottom: 12px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📥 来源批次</div>
+                ${sourceHtml}
+            </div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📤 流转去向</div>
+                ${targetHtml}
+            </div>
+
+            ${item.remark ? `
+                <div class="section-title" style="margin-top: 20px;">备注</div>
+                <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
+            ` : ''}
+            <div class="modal-footer" style="margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
+            </div>
+        `;
+
+        Utils.showModal('晾晒详情', content);
     },
 
     updateMoisture(id) {
@@ -302,7 +472,7 @@ const DryingPage = {
                 </div>
                 <div class="form-group">
                     <label>当前含水率(%) *</label>
-                    <input type="number" name="currentMoisture" step="0.1" min="0" max="100" value="${record.currentMoisture}" required>
+                    <input type="number" id="updateMoistureValue" name="currentMoisture" step="0.1" min="0" max="100" value="${record.currentMoisture}" required>
                 </div>
                 <div class="form-group">
                     <label>状态</label>
@@ -326,7 +496,19 @@ const DryingPage = {
             e.preventDefault();
             const formData = new FormData(form);
             const moisture = parseFloat(formData.get('currentMoisture')) || 0;
-            const status = moisture <= record.targetMoisture ? 'completed' : formData.get('status');
+            let status = formData.get('status');
+
+            const moistureCheck = Utils.validate.moisture(moisture);
+            if (!moistureCheck.valid) {
+                Utils.toast(moistureCheck.message, 'error');
+                return;
+            }
+
+            if (moisture <= record.targetMoisture && status !== 'completed') {
+                if (Utils.confirm('含水率已达标，是否标记为已完成？')) {
+                    status = 'completed';
+                }
+            }
 
             Storage.update('dryingRecords', id, {
                 currentMoisture: moisture,
@@ -339,94 +521,22 @@ const DryingPage = {
         });
     },
 
-    editDrying(id) {
-        const record = Storage.findById('dryingRecords', id);
-        if (!record) return;
-
-        const content = `
-            <form id="dryingForm">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>批次号</label>
-                        <input type="text" name="batchNo" value="${record.batchNo}" readonly style="background: #f5f5f5;">
-                    </div>
-                    <div class="form-group">
-                        <label>茶籽重量(kg) *</label>
-                        <input type="number" name="seedWeight" step="0.1" min="0" value="${record.seedWeight}" required>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>初始含水率(%) *</label>
-                        <input type="number" name="initialMoisture" step="0.1" min="0" max="100" value="${record.initialMoisture}" required>
-                    </div>
-                    <div class="form-group">
-                        <label>当前含水率(%) *</label>
-                        <input type="number" name="currentMoisture" step="0.1" min="0" max="100" value="${record.currentMoisture}" required>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>目标含水率(%) *</label>
-                    <input type="number" name="targetMoisture" step="0.1" min="0" max="100" value="${record.targetMoisture}" required>
-                </div>
-                <div class="form-group">
-                    <label>晾晒方式</label>
-                    <select name="dryingMethod">
-                        <option value="自然晾晒" ${record.dryingMethod === '自然晾晒' ? 'selected' : ''}>自然晾晒</option>
-                        <option value="烘干房" ${record.dryingMethod === '烘干房' ? 'selected' : ''}>烘干房</option>
-                        <option value="烘干机" ${record.dryingMethod === '烘干机' ? 'selected' : ''}>烘干机</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>状态</label>
-                    <select name="status">
-                        <option value="drying" ${record.status === 'drying' ? 'selected' : ''}>晾晒中</option>
-                        <option value="paused" ${record.status === 'paused' ? 'selected' : ''}>暂停</option>
-                        <option value="completed" ${record.status === 'completed' ? 'selected' : ''}>已完成</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>备注</label>
-                    <textarea name="remark" rows="2">${Utils.escapeHtml(record.remark || '')}</textarea>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="Utils.hideModal()">取消</button>
-                    <button type="submit" class="btn btn-primary">确认保存</button>
-                </div>
-            </form>
-        `;
-
-        Utils.showModal('编辑晾晒记录', content);
-
-        const form = document.getElementById('dryingForm');
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const formData = new FormData(form);
-            const data = {
-                seedWeight: parseFloat(formData.get('seedWeight')) || 0,
-                initialMoisture: parseFloat(formData.get('initialMoisture')) || 0,
-                currentMoisture: parseFloat(formData.get('currentMoisture')) || 0,
-                targetMoisture: parseFloat(formData.get('targetMoisture')) || 0,
-                dryingMethod: formData.get('dryingMethod'),
-                status: formData.get('status'),
-                remark: formData.get('remark')
-            };
-
-            Storage.update('dryingRecords', id, data);
-            Utils.hideModal();
-            Utils.toast('更新成功', 'success');
-            this.refresh();
-        });
-    },
-
     deleteDrying(id) {
-        if (!Utils.confirm('确定要删除这条晾晒记录吗？')) return;
+        if (!Utils.confirm('确定要删除这条晾晒记录吗？删除后无法恢复。')) return;
         Storage.delete('dryingRecords', id);
         Utils.toast('删除成功', 'success');
         this.refresh();
     },
 
     openShellingModal() {
+        const dryingList = (Storage.get('dryingRecords') || [])
+            .filter(d => d.status === 'completed');
+        const dryingOptions = dryingList.map(d => 
+            `<option value="${d.id}" data-weight="${d.seedWeight}">
+                ${d.batchNo} - ${Utils.formatNumber(d.seedWeight, 1)}kg
+            </option>`
+        ).join('');
+
         const content = `
             <form id="shellingForm">
                 <div class="form-row">
@@ -435,8 +545,21 @@ const DryingPage = {
                         <input type="text" name="batchNo" value="${Utils.generateBatchNo('BK')}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
+                        <label>来源晾晒批次</label>
+                        <select id="dryingSelect" name="dryingId" onchange="DryingPage.onDryingChange()">
+                            <option value="">直接剥壳（无来源）</option>
+                            ${dryingOptions}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
                         <label>茶籽重量(kg) *</label>
-                        <input type="number" name="seedWeight" step="0.1" min="0" required oninput="DryingPage.calcShelling()">
+                        <input type="number" id="shellingSeedWeight" name="seedWeight" step="0.1" min="0" required oninput="DryingPage.calcShelling()">
+                    </div>
+                    <div class="form-group">
+                        <label>含杂率(%)</label>
+                        <input type="number" name="impurityRate" step="0.01" min="0" max="100" value="1.0">
                     </div>
                 </div>
                 <div class="form-row">
@@ -445,19 +568,13 @@ const DryingPage = {
                         <input type="number" name="shellWeight" step="0.1" min="0" oninput="DryingPage.calcShelling()">
                     </div>
                     <div class="form-group">
-                        <label>仁重(kg)</label>
-                        <input type="number" name="kernelWeight" step="0.1" min="0" oninput="DryingPage.calcShelling()">
+                        <label>仁重(kg) *</label>
+                        <input type="number" id="shellingKernelWeight" name="kernelWeight" step="0.1" min="0" required oninput="DryingPage.calcShelling()">
                     </div>
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>出仁率(%)</label>
-                        <input type="text" name="shellingRate" readonly style="background: #f5f5f5; color: #689f38; font-weight: 600;">
-                    </div>
-                    <div class="form-group">
-                        <label>含杂率(%)</label>
-                        <input type="number" name="impurityRate" step="0.01" min="0" max="100" value="1.0">
-                    </div>
+                <div class="form-group">
+                    <label>出仁率(%)</label>
+                    <input type="text" name="shellingRate" readonly style="background: #f5f5f5; color: #689f38; font-weight: 600;">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -488,11 +605,27 @@ const DryingPage = {
         const form = document.getElementById('shellingForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('shellingForm');
+
             const formData = new FormData(form);
             const seedWeight = parseFloat(formData.get('seedWeight')) || 0;
             const kernelWeight = parseFloat(formData.get('kernelWeight')) || 0;
+
+            const seedCheck = Utils.validate.positiveNumber(seedWeight, '茶籽重量');
+            if (!seedCheck.valid) {
+                Utils.showFieldError('shellingSeedWeight', seedCheck.message);
+                return;
+            }
+
+            const shellingCheck = Utils.validate.shelling(kernelWeight, seedWeight);
+            if (!shellingCheck.valid) {
+                Utils.showFieldError('shellingKernelWeight', shellingCheck.message);
+                return;
+            }
+
             const data = {
                 batchNo: formData.get('batchNo'),
+                dryingId: formData.get('dryingId') || null,
                 seedWeight: seedWeight,
                 shellWeight: parseFloat(formData.get('shellWeight')) || 0,
                 kernelWeight: kernelWeight,
@@ -510,6 +643,15 @@ const DryingPage = {
         });
     },
 
+    onDryingChange() {
+        const select = document.getElementById('dryingSelect');
+        const option = select.options[select.selectedIndex];
+        const weightInput = document.getElementById('shellingSeedWeight');
+        if (option && option.dataset.weight) {
+            weightInput.value = option.dataset.weight;
+        }
+    },
+
     calcShelling() {
         const form = document.getElementById('shellingForm');
         if (!form) return;
@@ -521,56 +663,97 @@ const DryingPage = {
         }
     },
 
-    viewShellingDetail(id) {
-        const record = Storage.findById('shellingRecords', id);
-        if (!record) return;
+    viewShelling(id) {
+        const item = Storage.findById('shellingRecords', id);
+        if (!item) return;
+
+        const chain = Storage.getBatchChain('shellingRecords', id);
+        const drying = chain.source;
+
+        let sourceHtml = '';
+        if (drying) {
+            sourceHtml = `
+                <div style="padding: 8px 12px; background: #e8f4fd; border-radius: 6px; cursor: pointer;"
+                     onclick="Utils.hideModal(); App.switchPage('drying');">
+                    <span style="color: #1976d2; font-weight: 600;">${drying.batchNo}</span>
+                    <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(drying.seedWeight, 1)}kg</span>
+                    <span style="color: #1976d2; font-size: 12px; margin-left: 8px;">← 来源晾晒</span>
+                </div>
+            `;
+        } else {
+            sourceHtml = '<div style="color: #aaa; font-size: 13px;">无来源（直接剥壳）</div>';
+        }
+
+        let targetHtml = '';
+        if (chain.target && chain.target.length > 0) {
+            targetHtml = chain.target.map(t => `
+                <div style="padding: 8px 12px; background: #f0f9eb; border-radius: 6px; margin-bottom: 6px; cursor: pointer;"
+                     onclick="Utils.hideModal(); App.switchPage('pressing');">
+                    <span style="color: #689f38; font-weight: 600;">${t.batchNo}</span>
+                    <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(t.kernelWeight || 0, 1)}kg</span>
+                    <span style="color: #689f38; font-size: 12px; margin-left: 8px;">→ 炒制</span>
+                </div>
+            `).join('');
+        } else {
+            targetHtml = '<div style="color: #aaa; font-size: 13px;">暂无后续环节</div>';
+        }
 
         const content = `
+            <div class="section-title">基本信息</div>
             <div class="info-grid">
                 <div class="info-item">
                     <span class="label">批次号</span>
-                    <span class="value">${record.batchNo}</span>
+                    <span class="value">${item.batchNo}</span>
                 </div>
                 <div class="info-item">
                     <span class="label">状态</span>
-                    <span class="value">${this.getShellingStatusBadge(record.status)}</span>
+                    <span class="value">${this.getShellingStatusBadge(item.status)}</span>
                 </div>
                 <div class="info-item">
                     <span class="label">茶籽重量</span>
-                    <span class="value">${Utils.formatNumber(record.seedWeight, 1)} kg</span>
+                    <span class="value">${Utils.formatNumber(item.seedWeight, 1)} kg</span>
                 </div>
                 <div class="info-item">
                     <span class="label">壳重</span>
-                    <span class="value">${Utils.formatNumber(record.shellWeight, 1)} kg</span>
+                    <span class="value">${Utils.formatNumber(item.shellWeight, 1)} kg</span>
                 </div>
                 <div class="info-item">
                     <span class="label">仁重</span>
-                    <span class="value">${Utils.formatNumber(record.kernelWeight, 1)} kg</span>
+                    <span class="value" style="color: #689f38; font-weight: 600;">${Utils.formatNumber(item.kernelWeight, 1)} kg</span>
                 </div>
                 <div class="info-item">
                     <span class="label">出仁率</span>
-                    <span class="value" style="color: #689f38; font-weight: 700;">${Utils.formatNumber(record.shellingRate, 2)}%</span>
+                    <span class="value" style="color: #689f38; font-weight: 700;">${Utils.formatNumber(item.shellingRate, 2)}%</span>
                 </div>
                 <div class="info-item">
                     <span class="label">含杂率</span>
-                    <span class="value">${Utils.formatNumber(record.impurityRate, 2)}%</span>
+                    <span class="value">${Utils.formatNumber(item.impurityRate, 2)}%</span>
                 </div>
                 <div class="info-item">
                     <span class="label">操作人</span>
-                    <span class="value">${Utils.escapeHtml(record.operator || '-')}</span>
+                    <span class="value">${Utils.escapeHtml(item.operator || '-')}</span>
                 </div>
                 <div class="info-item">
                     <span class="label">加工时间</span>
-                    <span class="value">${Utils.formatDateTime(record.createdAt)}</span>
+                    <span class="value">${Utils.formatDateTime(item.createdAt)}</span>
                 </div>
             </div>
-            ${record.remark ? `
-                <div class="form-group" style="margin-top: 16px;">
-                    <label>备注</label>
-                    <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(record.remark)}</p>
-                </div>
+
+            <div class="section-title" style="margin-top: 20px;">批次流转</div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px; margin-bottom: 12px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📥 来源批次</div>
+                ${sourceHtml}
+            </div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📤 流转去向</div>
+                ${targetHtml}
+            </div>
+
+            ${item.remark ? `
+                <div class="section-title" style="margin-top: 20px;">备注</div>
+                <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
             ` : ''}
-            <div class="modal-footer">
+            <div class="modal-footer" style="margin-top: 20px;">
                 <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
             </div>
         `;
@@ -579,57 +762,72 @@ const DryingPage = {
     },
 
     editShelling(id) {
-        const record = Storage.findById('shellingRecords', id);
-        if (!record) return;
+        const item = Storage.findById('shellingRecords', id);
+        if (!item) return;
+
+        const dryingList = (Storage.get('dryingRecords') || [])
+            .filter(d => d.status === 'completed' || d.id === item.dryingId);
+        const dryingOptions = dryingList.map(d => 
+            `<option value="${d.id}" ${d.id === item.dryingId ? 'selected' : ''}>
+                ${d.batchNo} - ${Utils.formatNumber(d.seedWeight, 1)}kg
+            </option>`
+        ).join('');
 
         const content = `
             <form id="shellingForm">
                 <div class="form-row">
                     <div class="form-group">
                         <label>批次号</label>
-                        <input type="text" name="batchNo" value="${record.batchNo}" readonly style="background: #f5f5f5;">
+                        <input type="text" name="batchNo" value="${item.batchNo}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
+                        <label>来源晾晒批次</label>
+                        <select name="dryingId">
+                            <option value="">直接剥壳（无来源）</option>
+                            ${dryingOptions}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
                         <label>茶籽重量(kg) *</label>
-                        <input type="number" name="seedWeight" step="0.1" min="0" value="${record.seedWeight}" required oninput="DryingPage.calcShelling()">
+                        <input type="number" name="seedWeight" step="0.1" min="0" value="${item.seedWeight}" required oninput="DryingPage.calcShelling()">
+                    </div>
+                    <div class="form-group">
+                        <label>含杂率(%)</label>
+                        <input type="number" name="impurityRate" step="0.01" min="0" max="100" value="${item.impurityRate}">
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>壳重(kg)</label>
-                        <input type="number" name="shellWeight" step="0.1" min="0" value="${record.shellWeight}" oninput="DryingPage.calcShelling()">
+                        <input type="number" name="shellWeight" step="0.1" min="0" value="${item.shellWeight}" oninput="DryingPage.calcShelling()">
                     </div>
                     <div class="form-group">
-                        <label>仁重(kg)</label>
-                        <input type="number" name="kernelWeight" step="0.1" min="0" value="${record.kernelWeight}" oninput="DryingPage.calcShelling()">
+                        <label>仁重(kg) *</label>
+                        <input type="number" name="kernelWeight" step="0.1" min="0" value="${item.kernelWeight}" required oninput="DryingPage.calcShelling()">
                     </div>
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>出仁率(%)</label>
-                        <input type="text" name="shellingRate" value="${Utils.formatNumber(record.shellingRate, 2)}%" readonly style="background: #f5f5f5; color: #689f38; font-weight: 600;">
-                    </div>
-                    <div class="form-group">
-                        <label>含杂率(%)</label>
-                        <input type="number" name="impurityRate" step="0.01" min="0" max="100" value="${record.impurityRate}">
-                    </div>
+                <div class="form-group">
+                    <label>出仁率(%)</label>
+                    <input type="text" name="shellingRate" value="${Utils.formatNumber(item.shellingRate, 2)}%" readonly style="background: #f5f5f5; color: #689f38; font-weight: 600;">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>操作人</label>
-                        <input type="text" name="operator" value="${Utils.escapeHtml(record.operator || '')}">
+                        <input type="text" name="operator" value="${Utils.escapeHtml(item.operator || '')}">
                     </div>
                     <div class="form-group">
                         <label>状态</label>
                         <select name="status">
-                            <option value="processing" ${record.status === 'processing' ? 'selected' : ''}>加工中</option>
-                            <option value="completed" ${record.status === 'completed' ? 'selected' : ''}>已完成</option>
+                            <option value="processing" ${item.status === 'processing' ? 'selected' : ''}>加工中</option>
+                            <option value="completed" ${item.status === 'completed' ? 'selected' : ''}>已完成</option>
                         </select>
                     </div>
                 </div>
                 <div class="form-group">
                     <label>备注</label>
-                    <textarea name="remark" rows="2">${Utils.escapeHtml(record.remark || '')}</textarea>
+                    <textarea name="remark" rows="2">${Utils.escapeHtml(item.remark || '')}</textarea>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="Utils.hideModal()">取消</button>
@@ -646,7 +844,15 @@ const DryingPage = {
             const formData = new FormData(form);
             const seedWeight = parseFloat(formData.get('seedWeight')) || 0;
             const kernelWeight = parseFloat(formData.get('kernelWeight')) || 0;
+
+            const shellingCheck = Utils.validate.shelling(kernelWeight, seedWeight);
+            if (!shellingCheck.valid) {
+                Utils.toast(shellingCheck.message, 'error');
+                return;
+            }
+
             const data = {
+                dryingId: formData.get('dryingId') || null,
                 seedWeight: seedWeight,
                 shellWeight: parseFloat(formData.get('shellWeight')) || 0,
                 kernelWeight: kernelWeight,
@@ -665,7 +871,7 @@ const DryingPage = {
     },
 
     deleteShelling(id) {
-        if (!Utils.confirm('确定要删除这条剥壳记录吗？')) return;
+        if (!Utils.confirm('确定要删除这条剥壳记录吗？删除后无法恢复。')) return;
         Storage.delete('shellingRecords', id);
         Utils.toast('删除成功', 'success');
         this.refresh();

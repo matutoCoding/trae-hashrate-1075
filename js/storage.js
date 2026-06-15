@@ -34,18 +34,20 @@ const Storage = {
         const list = this.get(key) || [];
         const index = list.findIndex(item => item.id === id);
         if (index !== -1) {
+            const oldItem = list[index];
             list[index] = { ...list[index], ...updates, updatedAt: new Date().toISOString() };
             this.set(key, list);
-            return list[index];
+            return { newItem: list[index], oldItem: oldItem };
         }
         return null;
     },
 
     delete(key, id) {
         const list = this.get(key) || [];
+        const item = list.find(i => i.id === id);
         const filtered = list.filter(item => item.id !== id);
         this.set(key, filtered);
-        return filtered.length !== list.length;
+        return { success: filtered.length !== list.length, deletedItem: item };
     },
 
     findById(key, id) {
@@ -53,15 +55,120 @@ const Storage = {
         return list.find(item => item.id === id) || null;
     },
 
+    filter(key, conditions) {
+        const list = this.get(key) || [];
+        return list.filter(item => {
+            for (const [field, condition] of Object.entries(conditions)) {
+                if (condition === undefined || condition === null || condition === '') continue;
+                
+                const itemValue = item[field];
+                
+                if (typeof condition === 'function') {
+                    if (!condition(itemValue, item)) return false;
+                } else if (typeof condition === 'string' && condition.includes('*')) {
+                    const pattern = condition.replace(/\*/g, '.*');
+                    const regex = new RegExp(pattern, 'i');
+                    if (!regex.test(String(itemValue || ''))) return false;
+                } else {
+                    if (itemValue != condition) return false;
+                }
+            }
+            return true;
+        });
+    },
+
     generateId() {
         return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+    },
+
+    getBatchChain(recordType, recordId) {
+        const chain = { source: null, target: null };
+        
+        const typeMap = {
+            purchases: { sourceKey: null, targetKey: 'purchaseId', targetType: 'dryingRecords' },
+            dryingRecords: { sourceKey: 'purchaseId', sourceType: 'purchases', targetKey: 'dryingId', targetType: 'shellingRecords' },
+            shellingRecords: { sourceKey: 'dryingId', sourceType: 'dryingRecords', targetKey: 'shellingId', targetType: 'roastingRecords' },
+            roastingRecords: { sourceKey: 'shellingId', sourceType: 'shellingRecords', targetKey: 'roastingId', targetType: 'pressingRecords' },
+            pressingRecords: { sourceKey: 'roastingId', sourceType: 'roastingRecords', targetKey: 'pressingId', targetType: 'filteringRecords' },
+            filteringRecords: { sourceKey: 'pressingId', sourceType: 'pressingRecords', targetKey: 'filteringId', targetType: 'refiningRecords' },
+            refiningRecords: { sourceKey: 'filteringId', sourceType: 'filteringRecords', targetKey: 'refiningId', targetType: 'bottlingRecords' },
+            bottlingRecords: { sourceKey: 'refiningId', sourceType: 'refiningRecords', targetKey: null, targetType: null }
+        };
+
+        const current = this.findById(recordType, recordId);
+        if (!current) return chain;
+
+        const mapping = typeMap[recordType];
+        if (mapping && mapping.sourceKey && mapping.sourceType) {
+            const sourceId = current[mapping.sourceKey];
+            if (sourceId) {
+                chain.source = this.findById(mapping.sourceType, sourceId);
+                chain.sourceType = mapping.sourceType;
+            }
+        }
+
+        if (mapping && mapping.targetKey && mapping.targetType) {
+            const targetList = this.filter(mapping.targetType, { [mapping.targetKey]: recordId });
+            if (targetList && targetList.length > 0) {
+                chain.target = targetList;
+                chain.targetType = mapping.targetType;
+            }
+        }
+
+        return chain;
+    },
+
+    getAvailableBatches(sourceType, sourceField, weightField) {
+        const list = this.get(sourceType) || [];
+        return list.filter(item => {
+            if (item.status !== 'completed') return false;
+            if (item._used) return false;
+            return true;
+        }).map(item => ({
+            id: item.id,
+            batchNo: item.batchNo || item.orderNo || item.id,
+            weight: item[weightField] || 0,
+            ...item
+        }));
+    },
+
+    updateProductStock(productId, quantityChange, reason = '') {
+        const product = this.findById('products', productId);
+        if (!product) return { success: false, message: '产品不存在' };
+
+        const newStock = (product.stock || 0) + quantityChange;
+        if (newStock < 0) {
+            return { 
+                success: false, 
+                message: `库存不足！当前库存 ${product.stock}，需要 ${Math.abs(quantityChange)}`,
+                currentStock: product.stock
+            };
+        }
+
+        const result = this.update('products', productId, { stock: newStock });
+        if (result) {
+            const stockLogs = this.get('stockLogs') || [];
+            stockLogs.unshift({
+                id: this.generateId(),
+                productId: productId,
+                productName: product.name,
+                change: quantityChange,
+                stockBefore: product.stock || 0,
+                stockAfter: newStock,
+                reason: reason,
+                createdAt: new Date().toISOString()
+            });
+            this.set('stockLogs', stockLogs);
+            return { success: true, stock: newStock };
+        }
+        return { success: false, message: '更新失败' };
     },
 
     initMockData() {
         if (!this.get('purchases')) {
             const mockPurchases = [
                 {
-                    id: this.generateId(),
+                    id: 'purchase_001',
                     type: 'buy',
                     farmerName: '张三',
                     farmerPhone: '13800138001',
@@ -76,7 +183,7 @@ const Storage = {
                     remark: '一级籽'
                 },
                 {
-                    id: this.generateId(),
+                    id: 'purchase_002',
                     type: 'process',
                     farmerName: '李四',
                     farmerPhone: '13800138002',
@@ -90,6 +197,21 @@ const Storage = {
                     status: 'processing',
                     createdAt: new Date(Date.now() - 86400000).toISOString(),
                     remark: '来料代榨'
+                },
+                {
+                    id: 'purchase_003',
+                    type: 'buy',
+                    farmerName: '王五',
+                    farmerPhone: '13800138003',
+                    village: '胜利村',
+                    seedType: '小果油茶籽',
+                    weight: 200,
+                    moisture: 10.8,
+                    price: 9.2,
+                    totalAmount: 1840,
+                    status: 'completed',
+                    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
+                    remark: '今天刚收的'
                 }
             ];
             this.set('purchases', mockPurchases);
@@ -98,17 +220,30 @@ const Storage = {
         if (!this.get('dryingRecords')) {
             const mockDrying = [
                 {
-                    id: this.generateId(),
+                    id: 'drying_001',
                     batchNo: 'GZ202401001',
-                    purchaseId: null,
+                    purchaseId: 'purchase_001',
                     seedWeight: 520,
                     initialMoisture: 12.5,
                     targetMoisture: 8,
-                    currentMoisture: 9.8,
+                    currentMoisture: 7.8,
                     dryingMethod: '自然晾晒',
-                    status: 'drying',
+                    status: 'completed',
                     startTime: new Date(Date.now() - 86400000 * 2).toISOString(),
-                    remark: '晾晒中'
+                    remark: '晾晒完成'
+                },
+                {
+                    id: 'drying_002',
+                    batchNo: 'GZ202401002',
+                    purchaseId: 'purchase_003',
+                    seedWeight: 200,
+                    initialMoisture: 10.8,
+                    targetMoisture: 8,
+                    currentMoisture: 9.5,
+                    dryingMethod: '烘干房',
+                    status: 'drying',
+                    startTime: new Date(Date.now() - 3600000 * 2).toISOString(),
+                    remark: '烘干中'
                 }
             ];
             this.set('dryingRecords', mockDrying);
@@ -117,13 +252,13 @@ const Storage = {
         if (!this.get('shellingRecords')) {
             const mockShelling = [
                 {
-                    id: this.generateId(),
+                    id: 'shelling_001',
                     batchNo: 'BK202401001',
-                    dryingId: null,
-                    seedWeight: 480,
-                    shellWeight: 180,
-                    kernelWeight: 300,
-                    shellingRate: 62.5,
+                    dryingId: 'drying_001',
+                    seedWeight: 495,
+                    shellWeight: 185,
+                    kernelWeight: 310,
+                    shellingRate: 62.6,
                     impurityRate: 1.2,
                     operator: '王师傅',
                     status: 'completed',
@@ -137,9 +272,10 @@ const Storage = {
         if (!this.get('roastingRecords')) {
             const mockRoasting = [
                 {
-                    id: this.generateId(),
+                    id: 'roasting_001',
                     batchNo: 'CZ202401001',
-                    kernelWeight: 300,
+                    shellingId: 'shelling_001',
+                    kernelWeight: 310,
                     temperature: 120,
                     roastingTime: 45,
                     roastLevel: '中炒',
@@ -155,19 +291,34 @@ const Storage = {
         if (!this.get('pressingRecords')) {
             const mockPressing = [
                 {
-                    id: this.generateId(),
+                    id: 'pressing_001',
                     batchNo: 'ZY202401001',
-                    roastingId: null,
-                    kernelWeight: 295,
-                    crudeOilWeight: 65,
-                    cakeWeight: 220,
-                    oilYieldRate: 22.03,
+                    roastingId: 'roasting_001',
+                    kernelWeight: 305,
+                    crudeOilWeight: 68,
+                    cakeWeight: 225,
+                    oilYieldRate: 22.3,
                     pressure: 50,
                     pressingTime: 120,
                     operator: '张师傅',
                     status: 'completed',
                     createdAt: new Date(Date.now() - 86400000).toISOString(),
                     remark: ''
+                },
+                {
+                    id: 'pressing_002',
+                    batchNo: 'ZY202401002',
+                    roastingId: null,
+                    kernelWeight: 150,
+                    crudeOilWeight: 33,
+                    cakeWeight: 110,
+                    oilYieldRate: 22.0,
+                    pressure: 55,
+                    pressingTime: 100,
+                    operator: '张师傅',
+                    status: 'completed',
+                    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+                    remark: '小批次'
                 }
             ];
             this.set('pressingRecords', mockPressing);
@@ -176,13 +327,13 @@ const Storage = {
         if (!this.get('filteringRecords')) {
             const mockFiltering = [
                 {
-                    id: this.generateId(),
+                    id: 'filtering_001',
                     batchNo: 'GL202401001',
-                    pressingId: null,
-                    crudeOilWeight: 65,
-                    filteredOilWeight: 62,
+                    pressingId: 'pressing_001',
+                    crudeOilWeight: 68,
+                    filteredOilWeight: 64.5,
                     filterMethod: '板框过滤',
-                    sedimentWeight: 2.5,
+                    sedimentWeight: 3,
                     filterTime: 180,
                     operator: '王师傅',
                     status: 'completed',
@@ -196,16 +347,16 @@ const Storage = {
         if (!this.get('refiningRecords')) {
             const mockRefining = [
                 {
-                    id: this.generateId(),
+                    id: 'refining_001',
                     batchNo: 'JL202401001',
-                    filteringId: null,
-                    crudeOilWeight: 62,
-                    refinedOilWeight: 58,
+                    filteringId: 'filtering_001',
+                    crudeOilWeight: 64.5,
+                    refinedOilWeight: 60,
                     degumming: true,
                     deacidification: true,
                     decolorization: false,
                     deodorization: false,
-                    refiningRate: 93.55,
+                    refiningRate: 93.02,
                     operator: '李师傅',
                     status: 'completed',
                     createdAt: new Date(Date.now() - 21600000).toISOString(),
@@ -218,16 +369,17 @@ const Storage = {
         if (!this.get('bottlingRecords')) {
             const mockBottling = [
                 {
-                    id: this.generateId(),
+                    id: 'bottling_001',
                     batchNo: 'GZ202401001',
-                    refiningId: null,
-                    oilWeight: 58,
+                    refiningId: 'refining_001',
+                    oilWeight: 60,
                     bottleSpec: '500ml',
-                    bottleCount: 100,
+                    bottleCount: 110,
                     labelType: '精品山茶油',
+                    productId: 'prod_001',
                     operator: '王大姐',
                     status: 'completed',
-                    createdAt: new Date().toISOString(),
+                    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
                     remark: ''
                 }
             ];
@@ -237,18 +389,18 @@ const Storage = {
         if (!this.get('cakeRecords')) {
             const mockCake = [
                 {
-                    id: this.generateId(),
+                    id: 'cake_produce_001',
                     type: 'produce',
                     batchNo: 'CK202401001',
-                    pressingId: null,
-                    cakeWeight: 220,
-                    cakeCount: 22,
+                    pressingId: 'pressing_001',
+                    cakeWeight: 225,
+                    cakeCount: 23,
                     status: 'instock',
                     createdAt: new Date(Date.now() - 86400000).toISOString(),
                     remark: ''
                 },
                 {
-                    id: this.generateId(),
+                    id: 'cake_sell_001',
                     type: 'sell',
                     customerName: '赵老板',
                     customerPhone: '13900139001',
@@ -257,7 +409,7 @@ const Storage = {
                     price: 2.5,
                     totalAmount: 250,
                     status: 'completed',
-                    createdAt: new Date().toISOString(),
+                    createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
                     remark: ''
                 }
             ];
@@ -267,10 +419,11 @@ const Storage = {
         if (!this.get('salesRecords')) {
             const mockSales = [
                 {
-                    id: this.generateId(),
+                    id: 'sale_001',
                     orderNo: 'XS202401001',
                     customerName: '陈女士',
                     customerPhone: '13700137001',
+                    productId: 'prod_001',
                     productName: '精品山茶油',
                     spec: '500ml',
                     quantity: 20,
@@ -278,29 +431,42 @@ const Storage = {
                     totalAmount: 2560,
                     paymentMethod: '微信',
                     status: 'completed',
-                    createdAt: new Date().toISOString(),
+                    stockDeducted: true,
+                    createdAt: new Date(Date.now() - 3600000 * 6).toISOString(),
                     remark: '老客户'
+                },
+                {
+                    id: 'sale_002',
+                    orderNo: 'XS202401002',
+                    customerName: '刘先生',
+                    customerPhone: '13600136002',
+                    productId: 'prod_002',
+                    productName: '一级山茶油',
+                    spec: '1L',
+                    quantity: 5,
+                    unitPrice: 238,
+                    totalAmount: 1190,
+                    paymentMethod: '现金',
+                    status: 'completed',
+                    stockDeducted: true,
+                    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+                    remark: ''
                 }
             ];
             this.set('salesRecords', mockSales);
         }
 
-        if (!this.get('farmers')) {
-            const mockFarmers = [
-                { id: this.generateId(), name: '张三', phone: '13800138001', village: '东风村' },
-                { id: this.generateId(), name: '李四', phone: '13800138002', village: '红旗村' },
-                { id: this.generateId(), name: '王五', phone: '13800138003', village: '胜利村' }
-            ];
-            this.set('farmers', mockFarmers);
-        }
-
         if (!this.get('products')) {
             const mockProducts = [
-                { id: this.generateId(), name: '精品山茶油', spec: '500ml', price: 128, stock: 80 },
-                { id: this.generateId(), name: '一级山茶油', spec: '1L', price: 238, stock: 50 },
-                { id: this.generateId(), name: '农家山茶油', spec: '2.5L', price: 398, stock: 30 }
+                { id: 'prod_001', name: '精品山茶油', spec: '500ml', price: 128, stock: 90 },
+                { id: 'prod_002', name: '一级山茶油', spec: '1L', price: 238, stock: 45 },
+                { id: 'prod_003', name: '农家山茶油', spec: '2.5L', price: 398, stock: 30 }
             ];
             this.set('products', mockProducts);
+        }
+
+        if (!this.get('stockLogs')) {
+            this.set('stockLogs', []);
         }
     }
 };

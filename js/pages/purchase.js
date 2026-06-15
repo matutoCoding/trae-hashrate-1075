@@ -1,13 +1,19 @@
 const PurchasePage = {
     currentTab: 'buy',
+    filterKeyword: '',
+    filterStatus: '',
+    filterDateStart: '',
+    filterDateEnd: '',
 
     render() {
+        const filteredData = this.getFilteredData();
+
         return `
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon green">📥</div>
                     <div class="stat-info">
-                        <div class="stat-value">${this.getTotalPurchases()} kg</div>
+                        <div class="stat-value">${Utils.formatNumber(this.getTotalWeight(), 1)} kg</div>
                         <div class="stat-label">累计收购茶籽</div>
                     </div>
                 </div>
@@ -46,18 +52,25 @@ const PurchasePage = {
                 </div>
                 <div class="card-body">
                     <div class="filter-bar">
-                        <input type="text" id="searchKeyword" placeholder="搜索农户姓名/村庄..." style="width: 200px;">
-                        <select id="filterStatus">
+                        <input type="text" id="purchaseSearch" placeholder="搜索农户姓名/村庄/电话..." 
+                               style="width: 200px;" value="${this.filterKeyword}"
+                               oninput="PurchasePage.onSearchChange(this.value)">
+                        <select id="purchaseStatusFilter" onchange="PurchasePage.onStatusChange(this.value)">
                             <option value="">全部状态</option>
-                            <option value="pending">待付款</option>
-                            <option value="completed">已完成</option>
-                            <option value="processing">加工中</option>
+                            <option value="pending" ${this.filterStatus === 'pending' ? 'selected' : ''}>待付款</option>
+                            <option value="completed" ${this.filterStatus === 'completed' ? 'selected' : ''}>已完成</option>
+                            <option value="processing" ${this.filterStatus === 'processing' ? 'selected' : ''}>加工中</option>
                         </select>
-                        <input type="date" id="filterDateStart">
+                        <input type="date" id="purchaseDateStart" value="${this.filterDateStart}"
+                               onchange="PurchasePage.onDateStartChange(this.value)">
                         <span>至</span>
-                        <input type="date" id="filterDateEnd">
+                        <input type="date" id="purchaseDateEnd" value="${this.filterDateEnd}"
+                               onchange="PurchasePage.onDateEndChange(this.value)">
                         <button class="btn btn-secondary btn-sm" onclick="PurchasePage.refreshList()">查询</button>
                         <button class="btn btn-secondary btn-sm" onclick="PurchasePage.resetFilter()">重置</button>
+                    </div>
+                    <div style="margin-bottom: 10px; font-size: 13px; color: #888;">
+                        共 ${filteredData.length} 条记录
                     </div>
                     <div class="table-container">
                         <table>
@@ -75,8 +88,8 @@ const PurchasePage = {
                                     <th>操作</th>
                                 </tr>
                             </thead>
-                            <tbody id="purchaseTableBody">
-                                ${this.renderTableRows()}
+                            <tbody>
+                                ${this.renderTableRows(filteredData)}
                             </tbody>
                         </table>
                     </div>
@@ -85,15 +98,38 @@ const PurchasePage = {
         `;
     },
 
-    renderTableRows() {
+    getFilteredData() {
         const purchases = Storage.get('purchases') || [];
-        const filtered = purchases.filter(p => p.type === this.currentTab);
+        let filtered = purchases.filter(p => p.type === this.currentTab);
 
-        if (filtered.length === 0) {
+        if (this.filterKeyword) {
+            const keyword = this.filterKeyword.toLowerCase();
+            filtered = filtered.filter(p => 
+                (p.farmerName && p.farmerName.toLowerCase().includes(keyword)) ||
+                (p.village && p.village.toLowerCase().includes(keyword)) ||
+                (p.farmerPhone && p.farmerPhone.includes(keyword))
+            );
+        }
+
+        if (this.filterStatus) {
+            filtered = filtered.filter(p => p.status === this.filterStatus);
+        }
+
+        if (this.filterDateStart || this.filterDateEnd) {
+            filtered = filtered.filter(p => 
+                Utils.isDateInRange(p.createdAt, this.filterDateStart, this.filterDateEnd)
+            );
+        }
+
+        return filtered;
+    },
+
+    renderTableRows(data) {
+        if (data.length === 0) {
             return `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">暂无记录</div></div></td></tr>`;
         }
 
-        return filtered.map(item => `
+        return data.map(item => `
             <tr>
                 <td>${Utils.formatDateTime(item.createdAt)}</td>
                 <td>${Utils.escapeHtml(item.farmerName)}</td>
@@ -129,10 +165,9 @@ const PurchasePage = {
         return `<span class="badge ${s.class}">${s.text}</span>`;
     },
 
-    getTotalPurchases() {
+    getTotalWeight() {
         const purchases = Storage.get('purchases') || [];
-        const total = purchases.filter(p => p.type === 'buy').reduce((sum, p) => sum + (p.weight || 0), 0);
-        return Utils.formatNumber(total, 1);
+        return purchases.filter(p => p.type === 'buy').reduce((sum, p) => sum + (p.weight || 0), 0);
     },
 
     getTotalAmount() {
@@ -151,8 +186,29 @@ const PurchasePage = {
         return purchases.filter(p => p.type === 'process' && p.status === 'processing').length;
     },
 
+    onSearchChange(value) {
+        this.filterKeyword = value;
+    },
+
+    onStatusChange(value) {
+        this.filterStatus = value;
+        this.refresh();
+    },
+
+    onDateStartChange(value) {
+        this.filterDateStart = value;
+    },
+
+    onDateEndChange(value) {
+        this.filterDateEnd = value;
+    },
+
     switchTab(tab) {
         this.currentTab = tab;
+        this.filterKeyword = '';
+        this.filterStatus = '';
+        this.filterDateStart = '';
+        this.filterDateEnd = '';
         this.refresh();
     },
 
@@ -165,11 +221,11 @@ const PurchasePage = {
                 <div class="form-row">
                     <div class="form-group">
                         <label>农户姓名 *</label>
-                        <input type="text" name="farmerName" required>
+                        <input type="text" id="farmerName" name="farmerName" required>
                     </div>
                     <div class="form-group">
-                        <label>联系电话 *</label>
-                        <input type="tel" name="farmerPhone" required>
+                        <label>联系电话</label>
+                        <input type="tel" id="farmerPhone" name="farmerPhone">
                     </div>
                 </div>
                 <div class="form-row">
@@ -190,18 +246,18 @@ const PurchasePage = {
                 <div class="form-row">
                     <div class="form-group">
                         <label>毛重(kg) *</label>
-                        <input type="number" name="weight" step="0.1" min="0" required oninput="PurchasePage.calcTotal()">
+                        <input type="number" id="purchaseWeight" name="weight" step="0.1" min="0" required oninput="PurchasePage.calcTotal()">
                     </div>
                     <div class="form-group">
                         <label>含水率(%)</label>
-                        <input type="number" name="moisture" step="0.1" min="0" max="100" value="12">
+                        <input type="number" id="purchaseMoisture" name="moisture" step="0.1" min="0" max="100" value="12" onblur="PurchasePage.validateMoisture()">
                     </div>
                 </div>
                 ${isBuy ? `
                     <div class="form-row">
                         <div class="form-group">
                             <label>单价(元/kg) *</label>
-                            <input type="number" name="price" step="0.01" min="0" required oninput="PurchasePage.calcTotal()">
+                            <input type="number" id="purchasePrice" name="price" step="0.01" min="0" required oninput="PurchasePage.calcTotal()">
                         </div>
                         <div class="form-group">
                             <label>总金额(元)</label>
@@ -238,6 +294,20 @@ const PurchasePage = {
         this.initFormSubmit();
     },
 
+    validateMoisture() {
+        const input = document.getElementById('purchaseMoisture');
+        if (!input) return;
+        const value = parseFloat(input.value) || 0;
+        const result = Utils.validate.moisture(value);
+        if (!result.valid) {
+            Utils.showFieldError('purchaseMoisture', result.message);
+        } else if (result.warning) {
+            Utils.showFieldError('purchaseMoisture', result.warning, 'warning');
+        } else {
+            Utils.showFieldError('purchaseMoisture', '');
+        }
+    },
+
     calcTotal() {
         const form = document.getElementById('purchaseForm');
         if (!form) return;
@@ -255,22 +325,59 @@ const PurchasePage = {
 
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('purchaseForm');
+
             const formData = new FormData(form);
+            const farmerName = formData.get('farmerName');
+            const weight = parseFloat(formData.get('weight')) || 0;
+            const moisture = parseFloat(formData.get('moisture')) || 0;
+
+            const nameCheck = Utils.validate.notEmpty(farmerName, '农户姓名');
+            if (!nameCheck.valid) {
+                Utils.showFieldError('farmerName', nameCheck.message);
+                return;
+            }
+
+            const weightCheck = Utils.validate.positiveNumber(weight, '毛重');
+            if (!weightCheck.valid) {
+                Utils.showFieldError('purchaseWeight', weightCheck.message);
+                return;
+            }
+
+            const moistureCheck = Utils.validate.moisture(moisture);
+            if (!moistureCheck.valid) {
+                Utils.showFieldError('purchaseMoisture', moistureCheck.message);
+                return;
+            }
+
+            const phone = formData.get('farmerPhone');
+            const phoneCheck = Utils.validate.phone(phone);
+            if (!phoneCheck.valid) {
+                Utils.showFieldError('farmerPhone', phoneCheck.message);
+                return;
+            }
+
             const data = {
                 type: this.currentTab,
-                farmerName: formData.get('farmerName'),
-                farmerPhone: formData.get('farmerPhone'),
+                farmerName: farmerName,
+                farmerPhone: phone,
                 village: formData.get('village'),
                 seedType: formData.get('seedType'),
-                weight: parseFloat(formData.get('weight')) || 0,
-                moisture: parseFloat(formData.get('moisture')) || 0,
+                weight: weight,
+                moisture: moisture,
                 status: formData.get('status'),
                 remark: formData.get('remark')
             };
 
             if (this.currentTab === 'buy') {
-                data.price = parseFloat(formData.get('price')) || 0;
-                data.totalAmount = data.weight * data.price;
+                const price = parseFloat(formData.get('price')) || 0;
+                const priceCheck = Utils.validate.positiveNumber(price, '单价');
+                if (!priceCheck.valid) {
+                    Utils.showFieldError('purchasePrice', priceCheck.message);
+                    return;
+                }
+                data.price = price;
+                data.totalAmount = weight * price;
             } else {
                 data.processFee = parseFloat(formData.get('processFee')) || 0;
             }
@@ -288,7 +395,24 @@ const PurchasePage = {
         if (!item) return;
 
         const isBuy = item.type === 'buy';
+        const chain = Storage.getBatchChain('purchases', id);
+
+        let targetHtml = '';
+        if (chain.target && chain.target.length > 0) {
+            targetHtml = chain.target.map(t => `
+                <div style="padding: 8px 12px; background: #f0f9eb; border-radius: 6px; margin-bottom: 6px; cursor: pointer;"
+                     onclick="App.switchPage('drying');">
+                    <span style="color: #689f38; font-weight: 600;">${t.batchNo}</span>
+                    <span style="color: #888; margin-left: 8px;">${t.seedWeight || '-'}kg</span>
+                    <span style="color: #689f38; font-size: 12px; margin-left: 8px;">→ 晾晒中</span>
+                </div>
+            `).join('');
+        } else {
+            targetHtml = '<div style="color: #aaa; font-size: 13px;">暂无后续环节</div>';
+        }
+
         const content = `
+            <div class="section-title">基本信息</div>
             <div class="info-grid">
                 <div class="info-item">
                     <span class="label">农户姓名</span>
@@ -296,7 +420,7 @@ const PurchasePage = {
                 </div>
                 <div class="info-item">
                     <span class="label">联系电话</span>
-                    <span class="value">${Utils.escapeHtml(item.farmerPhone)}</span>
+                    <span class="value">${Utils.escapeHtml(item.farmerPhone || '-')}</span>
                 </div>
                 <div class="info-item">
                     <span class="label">所在村庄</span>
@@ -338,13 +462,18 @@ const PurchasePage = {
                     <span class="value">${Utils.formatDateTime(item.createdAt)}</span>
                 </div>
             </div>
+
+            <div class="section-title" style="margin-top: 20px;">批次流转</div>
+            <div style="padding: 12px; background: #fafafa; border-radius: 8px;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📤 流转去向</div>
+                ${targetHtml}
+            </div>
+
             ${item.remark ? `
-                <div class="form-group" style="margin-top: 16px;">
-                    <label>备注</label>
-                    <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
-                </div>
+                <div class="section-title" style="margin-top: 20px;">备注</div>
+                <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
             ` : ''}
-            <div class="modal-footer">
+            <div class="modal-footer" style="margin-top: 20px;">
                 <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
             </div>
         `;
@@ -364,11 +493,11 @@ const PurchasePage = {
                 <div class="form-row">
                     <div class="form-group">
                         <label>农户姓名 *</label>
-                        <input type="text" name="farmerName" value="${Utils.escapeHtml(item.farmerName)}" required>
+                        <input type="text" id="farmerName" name="farmerName" value="${Utils.escapeHtml(item.farmerName)}" required>
                     </div>
                     <div class="form-group">
-                        <label>联系电话 *</label>
-                        <input type="tel" name="farmerPhone" value="${Utils.escapeHtml(item.farmerPhone)}" required>
+                        <label>联系电话</label>
+                        <input type="tel" id="farmerPhone" name="farmerPhone" value="${Utils.escapeHtml(item.farmerPhone || '')}">
                     </div>
                 </div>
                 <div class="form-row">
@@ -389,18 +518,18 @@ const PurchasePage = {
                 <div class="form-row">
                     <div class="form-group">
                         <label>毛重(kg) *</label>
-                        <input type="number" name="weight" step="0.1" min="0" value="${item.weight}" required oninput="PurchasePage.calcTotal()">
+                        <input type="number" id="purchaseWeight" name="weight" step="0.1" min="0" value="${item.weight}" required oninput="PurchasePage.calcTotal()">
                     </div>
                     <div class="form-group">
                         <label>含水率(%)</label>
-                        <input type="number" name="moisture" step="0.1" min="0" max="100" value="${item.moisture || 12}">
+                        <input type="number" id="purchaseMoisture" name="moisture" step="0.1" min="0" max="100" value="${item.moisture || 12}" onblur="PurchasePage.validateMoisture()">
                     </div>
                 </div>
                 ${isBuy ? `
                     <div class="form-row">
                         <div class="form-group">
                             <label>单价(元/kg) *</label>
-                            <input type="number" name="price" step="0.01" min="0" value="${item.price}" required oninput="PurchasePage.calcTotal()">
+                            <input type="number" id="purchasePrice" name="price" step="0.01" min="0" value="${item.price}" required oninput="PurchasePage.calcTotal()">
                         </div>
                         <div class="form-group">
                             <label>总金额(元)</label>
@@ -438,14 +567,38 @@ const PurchasePage = {
         const form = document.getElementById('purchaseForm');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
+            Utils.clearFieldErrors('purchaseForm');
+
             const formData = new FormData(form);
+            const farmerName = formData.get('farmerName');
+            const weight = parseFloat(formData.get('weight')) || 0;
+            const moisture = parseFloat(formData.get('moisture')) || 0;
+
+            const nameCheck = Utils.validate.notEmpty(farmerName, '农户姓名');
+            if (!nameCheck.valid) {
+                Utils.showFieldError('farmerName', nameCheck.message);
+                return;
+            }
+
+            const weightCheck = Utils.validate.positiveNumber(weight, '毛重');
+            if (!weightCheck.valid) {
+                Utils.showFieldError('purchaseWeight', weightCheck.message);
+                return;
+            }
+
+            const moistureCheck = Utils.validate.moisture(moisture);
+            if (!moistureCheck.valid) {
+                Utils.showFieldError('purchaseMoisture', moistureCheck.message);
+                return;
+            }
+
             const data = {
-                farmerName: formData.get('farmerName'),
+                farmerName: farmerName,
                 farmerPhone: formData.get('farmerPhone'),
                 village: formData.get('village'),
                 seedType: formData.get('seedType'),
-                weight: parseFloat(formData.get('weight')) || 0,
-                moisture: parseFloat(formData.get('moisture')) || 0,
+                weight: weight,
+                moisture: moisture,
                 status: formData.get('status'),
                 remark: formData.get('remark')
             };
@@ -466,7 +619,7 @@ const PurchasePage = {
     },
 
     deleteRecord(id) {
-        if (!Utils.confirm('确定要删除这条记录吗？')) return;
+        if (!Utils.confirm('确定要删除这条记录吗？删除后无法恢复。')) return;
         Storage.delete('purchases', id);
         Utils.toast('删除成功', 'success');
         this.refresh();
@@ -478,10 +631,10 @@ const PurchasePage = {
     },
 
     resetFilter() {
-        document.getElementById('searchKeyword').value = '';
-        document.getElementById('filterStatus').value = '';
-        document.getElementById('filterDateStart').value = '';
-        document.getElementById('filterDateEnd').value = '';
+        this.filterKeyword = '';
+        this.filterStatus = '';
+        this.filterDateStart = '';
+        this.filterDateEnd = '';
         this.refresh();
     },
 

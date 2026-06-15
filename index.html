@@ -48,7 +48,7 @@
             <div class="sidebar-footer">
                 <div class="today-overview">
                     <div class="overview-title">📊 今日经营概览</div>
-                    <div class="overview-item" data-page="purchase" onclick="App.goToPage('purchase')">
+                    <div class="overview-item" data-page="purchase" onclick="App.goToPage('purchase', { dateFilter: 'today' })">
                         <div class="overview-icon">📥</div>
                         <div class="overview-info">
                             <div class="overview-label">今日收购</div>
@@ -56,7 +56,7 @@
                         </div>
                         <span class="overview-arrow">›</span>
                     </div>
-                    <div class="overview-item" data-page="pressing" onclick="App.goToPage('pressing')">
+                    <div class="overview-item" data-page="pressing" onclick="App.goToPage('pressing', { dateFilter: 'today' })">
                         <div class="overview-icon">🛢️</div>
                         <div class="overview-info">
                             <div class="overview-label">今日压榨出油</div>
@@ -64,7 +64,7 @@
                         </div>
                         <span class="overview-arrow">›</span>
                     </div>
-                    <div class="overview-item" data-page="refining" onclick="App.goToPage('refining')">
+                    <div class="overview-item" data-page="refining" onclick="App.goToPage('refining', { dateFilter: 'today' })">
                         <div class="overview-icon">🍶</div>
                         <div class="overview-info">
                             <div class="overview-label">今日灌装</div>
@@ -72,7 +72,7 @@
                         </div>
                         <span class="overview-arrow">›</span>
                     </div>
-                    <div class="overview-item" data-page="sales" onclick="App.goToPage('sales')">
+                    <div class="overview-item" data-page="sales" onclick="App.goToPage('sales', { dateFilter: 'today', tab: 'records' })">
                         <div class="overview-icon">💰</div>
                         <div class="overview-info">
                             <div class="overview-label">今日销售额</div>
@@ -80,7 +80,7 @@
                         </div>
                         <span class="overview-arrow">›</span>
                     </div>
-                    <div class="overview-item warning" data-page="sales" onclick="App.goToPage('sales')">
+                    <div class="overview-item warning" data-page="sales" onclick="App.goToPage('sales', { lowStock: true, tab: 'products' })">
                         <div class="overview-icon">⚠️</div>
                         <div class="overview-info">
                             <div class="overview-label">库存预警</div>

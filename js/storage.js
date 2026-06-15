@@ -132,7 +132,7 @@ const Storage = {
         }));
     },
 
-    updateProductStock(productId, quantityChange, reason = '') {
+    updateProductStock(productId, quantityChange, reason = '', extra = {}) {
         const product = this.findById('products', productId);
         if (!product) return { success: false, message: '产品不存在' };
 
@@ -148,20 +148,132 @@ const Storage = {
         const result = this.update('products', productId, { stock: newStock });
         if (result) {
             const stockLogs = this.get('stockLogs') || [];
+            const logType = quantityChange > 0 ? 'in' : 'out';
             stockLogs.unshift({
                 id: this.generateId(),
                 productId: productId,
                 productName: product.name,
+                spec: product.spec || '',
                 change: quantityChange,
+                changeType: logType,
                 stockBefore: product.stock || 0,
                 stockAfter: newStock,
                 reason: reason,
+                operator: extra.operator || '',
+                relatedId: extra.relatedId || '',
                 createdAt: new Date().toISOString()
             });
             this.set('stockLogs', stockLogs);
             return { success: true, stock: newStock };
         }
         return { success: false, message: '更新失败' };
+    },
+
+    adjustProductStock(productId, newStockValue, reason = '', operator = '') {
+        const product = this.findById('products', productId);
+        if (!product) return { success: false, message: '产品不存在' };
+        if (newStockValue < 0) return { success: false, message: '库存不能为负数' };
+
+        const oldStock = product.stock || 0;
+        const change = newStockValue - oldStock;
+
+        if (change === 0) {
+            return { success: true, stock: oldStock, unchanged: true };
+        }
+
+        const result = this.update('products', productId, { stock: newStockValue });
+        if (result) {
+            const stockLogs = this.get('stockLogs') || [];
+            stockLogs.unshift({
+                id: this.generateId(),
+                productId: productId,
+                productName: product.name,
+                spec: product.spec || '',
+                change: change,
+                changeType: 'adjust',
+                stockBefore: oldStock,
+                stockAfter: newStockValue,
+                reason: reason || '手工调整库存',
+                operator: operator,
+                relatedId: '',
+                createdAt: new Date().toISOString()
+            });
+            this.set('stockLogs', stockLogs);
+            return { success: true, stock: newStockValue, change: change };
+        }
+        return { success: false, message: '更新失败' };
+    },
+
+    getStockLogs(filters = {}) {
+        const logs = this.get('stockLogs') || [];
+        return logs.filter(log => {
+            if (filters.productId && log.productId !== filters.productId) return false;
+            if (filters.changeType && log.changeType !== filters.changeType) return false;
+            if (filters.dateStart) {
+                if (new Date(log.createdAt) < new Date(filters.dateStart)) return false;
+            }
+            if (filters.dateEnd) {
+                const end = new Date(filters.dateEnd);
+                end.setHours(23, 59, 59, 999);
+                if (new Date(log.createdAt) > end) return false;
+            }
+            return true;
+        });
+    },
+
+    getFullBatchChainFromBottling(bottlingId) {
+        const chain = [];
+        let current = this.findById('bottlingRecords', bottlingId);
+        if (!current) return chain;
+
+        const steps = [
+            { key: 'bottlingRecords', label: '灌装', batchField: 'bottlingId' },
+            { key: 'refiningRecords', label: '精炼', batchField: 'refiningId', linkField: 'refiningId' },
+            { key: 'filteringRecords', label: '过滤', batchField: 'filteringId', linkField: 'filteringId' },
+            { key: 'pressingRecords', label: '压榨', batchField: 'pressingId', linkField: 'pressingId' },
+            { key: 'roastingRecords', label: '炒制', batchField: 'roastingId', linkField: 'roastingId' },
+            { key: 'shellingRecords', label: '剥壳', batchField: 'shellingId', linkField: 'shellingId' },
+            { key: 'dryingRecords', label: '晾晒', batchField: 'dryingId', linkField: 'dryingId' },
+            { key: 'purchases', label: '收购', batchField: 'purchaseId', linkField: 'purchaseId' }
+        ];
+
+        for (let i = 0; i < steps.length; i++) {
+            const step = steps[i];
+            if (current) {
+                chain.push({
+                    type: step.key,
+                    label: step.label,
+                    id: current.id,
+                    batchNo: current.batchNo || current.orderNo || '',
+                    status: current.status || '',
+                    data: current
+                });
+            }
+            if (i < steps.length - 1 && current) {
+                const nextStep = steps[i + 1];
+                const linkId = current[nextStep.linkField];
+                if (linkId) {
+                    current = this.findById(nextStep.key, linkId);
+                } else {
+                    current = null;
+                }
+            }
+        }
+        return chain;
+    },
+
+    getFullBatchChainFromSale(saleId) {
+        const sale = this.findById('salesRecords', saleId);
+        if (!sale) return { sale: null, chain: [], bottling: null };
+        
+        const bottlingRecords = this.get('bottlingRecords') || [];
+        let bottling = null;
+        if (sale.productId) {
+            bottling = bottlingRecords.find(b => b.productId === sale.productId);
+        }
+        
+        const chain = bottling ? this.getFullBatchChainFromBottling(bottling.id) : [];
+        return { sale: sale, chain: chain, bottling: bottling };
     },
 
     initMockData() {

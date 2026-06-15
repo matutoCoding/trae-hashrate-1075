@@ -7,9 +7,46 @@ const SalesPage = {
         dateStart: '',
         dateEnd: ''
     },
+    productStockLogFilter: {
+        productId: '',
+        changeType: '',
+        dateStart: '',
+        dateEnd: ''
+    },
+    onlyShowLowStockProducts: false,
 
     render() {
+        const params = this.navigationParams || {};
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+        if (params.tab) {
+            this.currentTab = params.tab;
+        }
+        if (params.lowStock) {
+            this.onlyShowLowStockProducts = true;
+            this.currentTab = 'products';
+        }
+        if (params.dateFilter === 'today') {
+            this.filterConditions = {
+                keyword: '',
+                paymentMethod: '',
+                status: '',
+                dateStart: todayStr,
+                dateEnd: todayStr
+            };
+            this.currentTab = 'records';
+        }
+        const hintBanner = (params.dateFilter === 'today' || params.lowStock) ? `
+            <div style="padding: 10px 16px; margin-bottom: 16px; background: ${params.lowStock ? '#fff3e0' : '#e8f5e9'}; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: ${params.lowStock ? '#e65100' : '#2e7d32'};">
+                    ${params.lowStock ? '📌 当前筛选：低库存产品（≤10瓶）' : `📌 当前筛选：${todayStr} 销售记录`}
+                </span>
+                <button class="btn btn-secondary btn-sm" onclick="SalesPage.clearNavFilter()">清除筛选</button>
+            </div>
+        ` : '';
+        this.navigationParams = {};
         return `
+            ${hintBanner}
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon green">💰</div>
@@ -183,7 +220,15 @@ const SalesPage = {
                                 <td>
                                     <div class="action-buttons">
                                         <button class="btn btn-outline btn-sm" onclick="SalesPage.viewRecord('${item.id}')">查看</button>
-                                        <button class="btn btn-secondary btn-sm" onclick="SalesPage.editRecord('${item.id}')">编辑</button>
+                                        ${(item.status === 'completed') ? `
+                                            <button class="btn btn-warning btn-sm" onclick="SalesPage.openCancelOrRefundModal('${item.id}', 'refund')">退货</button>
+                                        ` : ''}
+                                        ${(item.status === 'pending') ? `
+                                            <button class="btn btn-secondary btn-sm" onclick="SalesPage.openCancelOrRefundModal('${item.id}', 'cancel')">取消</button>
+                                        ` : ''}
+                                        ${(item.status !== 'cancelled' && item.status !== 'refunded') ? `
+                                            <button class="btn btn-secondary btn-sm" onclick="SalesPage.editRecord('${item.id}')">编辑</button>
+                                        ` : ''}
                                         <button class="btn btn-danger btn-sm" onclick="SalesPage.deleteRecord('${item.id}')">删除</button>
                                     </div>
                                 </td>
@@ -196,13 +241,32 @@ const SalesPage = {
     },
 
     renderProductsTable() {
-        const products = Storage.get('products') || [];
+        const products = this.getFilteredProducts();
+        const lowStockCount = (Storage.get('products') || []).filter(p => (p.stock || 0) <= 10).length;
 
         if (products.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">🏷️</div><div class="empty-state-text">暂无产品</div></div>`;
+            return `
+                <div class="filter-bar">
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="onlyShowLowStock" 
+                               ${this.onlyShowLowStockProducts ? 'checked' : ''} 
+                               onchange="SalesPage.toggleLowStockFilter(this.checked)">
+                        <span>只看低库存产品（≤10瓶，共 ${lowStockCount} 种）</span>
+                    </label>
+                </div>
+                <div class="empty-state"><div class="empty-state-icon">🏷️</div><div class="empty-state-text">暂无产品</div></div>
+            `;
         }
 
         return `
+            <div class="filter-bar">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="onlyShowLowStock" 
+                           ${this.onlyShowLowStockProducts ? 'checked' : ''} 
+                           onchange="SalesPage.toggleLowStockFilter(this.checked)">
+                    <span>只看低库存产品（≤10瓶，共 ${lowStockCount} 种）</span>
+                </label>
+            </div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -231,6 +295,8 @@ const SalesPage = {
                                     </td>
                                     <td>
                                         <div class="action-buttons">
+                                            <button class="btn btn-outline btn-sm" onclick="SalesPage.viewProductDetail('${item.id}')">详情</button>
+                                            <button class="btn btn-secondary btn-sm" onclick="SalesPage.adjustProductStock('${item.id}')">调库存</button>
                                             <button class="btn btn-secondary btn-sm" onclick="SalesPage.editProduct('${item.id}')">编辑</button>
                                             <button class="btn btn-danger btn-sm" onclick="SalesPage.deleteProduct('${item.id}')">删除</button>
                                         </div>
@@ -242,6 +308,256 @@ const SalesPage = {
                 </table>
             </div>
         `;
+    },
+
+    toggleLowStockFilter(checked) {
+        this.onlyShowLowStockProducts = checked;
+        this.refresh();
+    },
+
+    viewProductDetail(productId) {
+        const product = Storage.findById('products', productId);
+        if (!product) return;
+
+        this.productStockLogFilter = {
+            productId: productId,
+            changeType: '',
+            dateStart: '',
+            dateEnd: ''
+        };
+
+        this.renderProductDetailModal(product);
+    },
+
+    renderProductDetailModal(product) {
+        const logs = Storage.getStockLogs(this.productStockLogFilter);
+        const totalIn = logs.filter(l => l.changeType === 'in').reduce((s, l) => s + l.change, 0);
+        const totalOut = logs.filter(l => l.changeType === 'out').reduce((s, l) => s + Math.abs(l.change), 0);
+        const totalAdjust = logs.filter(l => l.changeType === 'adjust').reduce((s, l) => s + l.change, 0);
+
+        const logsHtml = logs.length === 0 
+            ? `<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">暂无库存流水</div></div></td></tr>`
+            : logs.map(log => {
+                const typeMap = {
+                    in: { text: '入库', class: 'badge-success', sign: '+' },
+                    out: { text: '出库', class: 'badge-danger', sign: '-' },
+                    adjust: { text: '调整', class: log.change >= 0 ? 'badge-warning' : 'badge-info', sign: log.change >= 0 ? '+' : '' }
+                };
+                const t = typeMap[log.changeType] || { text: log.changeType, class: 'badge-secondary', sign: '' };
+                return `
+                    <tr>
+                        <td>${Utils.formatDateTime(log.createdAt)}</td>
+                        <td><span class="badge ${t.class}">${t.text}</span></td>
+                        <td style="font-weight: 600; color: ${log.change >= 0 ? '#4caf50' : '#f44336'};">${t.sign}${log.change}</td>
+                        <td>${log.stockBefore} → ${log.stockAfter}</td>
+                        <td>${Utils.escapeHtml(log.reason || '-')}</td>
+                        <td>${Utils.escapeHtml(log.operator || '-')}</td>
+                    </tr>
+                `;
+            }).join('');
+
+        const content = `
+            <div style="margin-bottom: 20px;">
+                <div class="info-grid" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="info-item">
+                        <span class="label">产品名称</span>
+                        <span class="value">${Utils.escapeHtml(product.name)}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">规格</span>
+                        <span class="value">${product.spec || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">单价</span>
+                        <span class="value">¥${Utils.formatNumber(product.price, 2)}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">当前库存</span>
+                        <span class="value" style="font-weight: 600; color: ${(product.stock || 0) <= 10 ? '#f44336' : '#4caf50'};">${product.stock || 0} 瓶</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 16px; padding: 12px 16px; background: #f9f9f9; border-radius: 8px; display: flex; gap: 24px;">
+                <div><span style="color: #666;">累计入库：</span><span style="color: #4caf50; font-weight: 600;">+${totalIn} 瓶</span></div>
+                <div><span style="color: #666;">累计出库：</span><span style="color: #f44336; font-weight: 600;">-${totalOut} 瓶</span></div>
+                <div><span style="color: #666;">手工调整：</span><span style="color: #ff9800; font-weight: 600;">${totalAdjust >= 0 ? '+' : ''}${totalAdjust} 瓶</span></div>
+            </div>
+
+            <div style="border-top: 1px solid #eee; padding-top: 16px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 15px;">库存流水记录</h4>
+                <div class="filter-bar" style="margin-bottom: 12px;">
+                    <select onchange="SalesPage.filterProductStockLogs('changeType', this.value)" style="min-width: 120px;">
+                        <option value="">全部类型</option>
+                        <option value="in" ${this.productStockLogFilter.changeType === 'in' ? 'selected' : ''}>入库</option>
+                        <option value="out" ${this.productStockLogFilter.changeType === 'out' ? 'selected' : ''}>出库</option>
+                        <option value="adjust" ${this.productStockLogFilter.changeType === 'adjust' ? 'selected' : ''}>调整</option>
+                    </select>
+                    <input type="date" value="${this.productStockLogFilter.dateStart}" 
+                           onchange="SalesPage.filterProductStockLogs('dateStart', this.value)">
+                    <span>至</span>
+                    <input type="date" value="${this.productStockLogFilter.dateEnd}" 
+                           onchange="SalesPage.filterProductStockLogs('dateEnd', this.value)">
+                    <button class="btn btn-secondary btn-sm" onclick="SalesPage.filterProductStockLogs('reset', '')">重置</button>
+                </div>
+                <div class="table-container" style="max-height: 300px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>类型</th>
+                                <th>变动</th>
+                                <th>库存变化</th>
+                                <th>原因</th>
+                                <th>操作人</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${logsHtml}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="Utils.hideModal(); SalesPage.adjustProductStock('${product.id}')">调整库存</button>
+            </div>
+        `;
+
+        Utils.showModal(`产品详情 - ${product.name}`, content);
+    },
+
+    filterProductStockLogs(field, value) {
+        if (field === 'reset') {
+            this.productStockLogFilter = {
+                ...this.productStockLogFilter,
+                changeType: '',
+                dateStart: '',
+                dateEnd: ''
+            };
+        } else {
+            this.productStockLogFilter[field] = value;
+        }
+        const product = Storage.findById('products', this.productStockLogFilter.productId);
+        if (product) {
+            this.renderProductDetailModal(product);
+        }
+    },
+
+    adjustProductStock(productId) {
+        const product = Storage.findById('products', productId);
+        if (!product) return;
+
+        const content = `
+            <form id="adjustStockForm">
+                <div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 16px;">
+                    <div class="info-item">
+                        <span class="label">产品名称</span>
+                        <span class="value">${Utils.escapeHtml(product.name)}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">当前库存</span>
+                        <span class="value" style="font-weight: 600; color: #2196f3;">${product.stock || 0} 瓶</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>调整方式 *</label>
+                    <select id="adjustType" name="adjustType" onchange="SalesPage.updateAdjustHint()" required>
+                        <option value="set">直接设为（覆盖当前值）</option>
+                        <option value="add">增加</option>
+                        <option value="sub">减少</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>数量(瓶) *</label>
+                    <input type="number" id="adjustValue" name="adjustValue" min="0" value="0" required 
+                           oninput="SalesPage.updateAdjustHint()">
+                    <div id="adjustHint" style="margin-top: 4px; font-size: 13px; color: #666;">
+                        调整后库存：<strong style="color: #2196f3;">${product.stock || 0} 瓶</strong>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>调整原因 *</label>
+                    <input type="text" id="adjustReason" name="reason" placeholder="如：盘点差异、破损报损、赠品出库等" required>
+                </div>
+                <div class="form-group">
+                    <label>操作人</label>
+                    <input type="text" name="operator" placeholder="请输入操作人姓名">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="Utils.hideModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">确认调整</button>
+                </div>
+            </form>
+        `;
+
+        Utils.showModal('调整库存', content);
+
+        const form = document.getElementById('adjustStockForm');
+        const adjustPage = this;
+        form._currentProduct = { id: productId, stock: product.stock || 0 };
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            Utils.clearFieldErrors('adjustStockForm');
+
+            const formData = new FormData(form);
+            const adjustType = formData.get('adjustType');
+            const adjustValue = parseInt(formData.get('adjustValue')) || 0;
+            const reason = formData.get('reason');
+            const operator = formData.get('operator');
+            const currentStock = form._currentProduct.stock;
+
+            if (!reason) {
+                Utils.showFieldError('adjustReason', '请填写调整原因');
+                return;
+            }
+            if (adjustValue < 0) {
+                Utils.showFieldError('adjustValue', '调整数量不能为负数');
+                return;
+            }
+
+            let newStock;
+            if (adjustType === 'set') {
+                newStock = adjustValue;
+            } else if (adjustType === 'add') {
+                newStock = currentStock + adjustValue;
+            } else {
+                newStock = currentStock - adjustValue;
+            }
+
+            if (newStock < 0) {
+                Utils.showFieldError('adjustValue', '调整后库存不能为负数');
+                return;
+            }
+
+            const result = Storage.adjustProductStock(productId, newStock, reason, operator);
+            if (result.success) {
+                Utils.hideModal();
+                Utils.toast(result.unchanged ? '库存未变化' : '库存调整成功', 'success');
+                adjustPage.refresh();
+                App.updateSidebarStats();
+            } else {
+                Utils.toast(result.message || '调整失败', 'error');
+            }
+        });
+    },
+
+    updateAdjustHint() {
+        const form = document.getElementById('adjustStockForm');
+        if (!form) return;
+        const type = document.getElementById('adjustType').value;
+        const value = parseInt(document.getElementById('adjustValue').value) || 0;
+        const current = form._currentProduct?.stock || 0;
+        let newStock;
+        if (type === 'set') newStock = value;
+        else if (type === 'add') newStock = current + value;
+        else newStock = current - value;
+        const hint = document.getElementById('adjustHint');
+        if (hint) {
+            const color = newStock < 0 ? '#f44336' : (newStock <= 10 ? '#ff9800' : '#4caf50');
+            hint.innerHTML = `调整后库存：<strong style="color: ${color};">${newStock} 瓶</strong>${newStock < 0 ? '（不能为负）' : ''}`;
+        }
     },
 
     renderMonthlyStats() {
@@ -332,6 +648,14 @@ const SalesPage = {
         return records.length;
     },
 
+    getFilteredProducts() {
+        let products = Storage.get('products') || [];
+        if (this.onlyShowLowStockProducts) {
+            products = products.filter(p => (p.stock || 0) <= 10);
+        }
+        return products;
+    },
+
     switchTab(tab) {
         this.currentTab = tab;
         this.refresh();
@@ -354,6 +678,18 @@ const SalesPage = {
             dateStart: '',
             dateEnd: ''
         };
+        this.refresh();
+    },
+
+    clearNavFilter() {
+        this.filterConditions = {
+            keyword: '',
+            paymentMethod: '',
+            status: '',
+            dateStart: '',
+            dateEnd: ''
+        };
+        this.onlyShowLowStockProducts = false;
         this.refresh();
     },
 
@@ -495,7 +831,14 @@ const SalesPage = {
                 paymentMethod: formData.get('paymentMethod'),
                 status: status,
                 stockDeducted: status === 'completed',
-                remark: formData.get('remark')
+                remark: formData.get('remark'),
+                processLogs: [{
+                    id: Storage.generateId ? Storage.generateId() : Date.now().toString(),
+                    type: 'create',
+                    reason: '创建销售订单',
+                    time: new Date().toISOString(),
+                    operator: ''
+                }]
             };
 
             Storage.add('salesRecords', data);
@@ -533,6 +876,82 @@ const SalesPage = {
         if (!item) return;
 
         const product = item.productId ? Storage.findById('products', item.productId) : null;
+        const logs = item.processLogs || [];
+        const traceData = Storage.getFullBatchChainFromSale(id);
+        const chain = traceData.chain || [];
+
+        const logsHtml = logs.length === 0 
+            ? `<div class="empty-state" style="padding: 20px;"><div class="empty-state-icon">📝</div><div class="empty-state-text">暂无处理记录</div></div>`
+            : logs.map(log => {
+                const typeMap = {
+                    create: { text: '创建订单', class: 'badge-info', icon: '➕' },
+                    edit: { text: '编辑订单', class: 'badge-secondary', icon: '✏️' },
+                    cancel: { text: '取消订单', class: 'badge-secondary', icon: '❌' },
+                    refund: { text: '退货退款', class: 'badge-danger', icon: '↩️' },
+                    stock_restore: { text: '库存恢复', class: 'badge-success', icon: '📦' }
+                };
+                const t = typeMap[log.type] || { text: log.type, class: 'badge-secondary', icon: '📌' };
+                let extra = '';
+                if (log.stockRestored) {
+                    extra = `<div style="margin-top: 6px; font-size: 12px; color: #4caf50;">库存已恢复：+${log.quantity} 瓶</div>`;
+                }
+                return `
+                    <div style="padding: 12px; background: #f9f9f9; border-radius: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div>
+                                <span class="badge ${t.class}">${t.icon} ${t.text}</span>
+                                <span style="margin-left: 10px; font-size: 13px; color: #666;">${Utils.formatDateTime(log.time)}</span>
+                                ${log.operator ? `<span style="margin-left: 10px; font-size: 13px; color: #999;">操作人：${Utils.escapeHtml(log.operator)}</span>` : ''}
+                            </div>
+                        </div>
+                        ${log.reason ? `<div style="margin-top: 8px; font-size: 14px;">原因：${Utils.escapeHtml(log.reason)}</div>` : ''}
+                        ${extra}
+                    </div>
+                `;
+            }).join('');
+
+        const chainHtml = chain.length === 0
+            ? `<div class="empty-state" style="padding: 20px;"><div class="empty-state-icon">🔗</div><div class="empty-state-text">暂无批次追溯信息</div></div>`
+            : chain.map((step, idx) => {
+                const weightFieldMap = {
+                    bottlingRecords: 'bottledQuantity',
+                    refiningRecords: 'refinedOilWeight',
+                    filteringRecords: 'filteredOilWeight',
+                    pressingRecords: 'crudeOilWeight',
+                    roastingRecords: 'kernelWeight',
+                    shellingRecords: 'kernelWeight',
+                    dryingRecords: 'driedWeight',
+                    purchases: 'weight'
+                };
+                const wf = weightFieldMap[step.type] || 'weight';
+                const weight = step.data[wf] || step.data.weight || 0;
+                const statusMap = {
+                    completed: '<span class="badge badge-success">已完成</span>',
+                    processing: '<span class="badge badge-warning">进行中</span>',
+                    pending: '<span class="badge badge-info">待处理</span>'
+                };
+                const statusBadge = statusMap[step.status] || (step.status ? `<span class="badge badge-secondary">${step.status}</span>` : '');
+                return `
+                    <div style="display: flex; align-items: flex-start; margin-bottom: ${idx < chain.length - 1 ? '0' : '0'};">
+                        <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #8bc34a 0%, #689f38 100%); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; margin-right: 12px;">
+                            ${idx + 1}
+                        </div>
+                        <div style="flex: 1; padding-bottom: ${idx < chain.length - 1 ? '20px' : '0'}; position: relative;">
+                            ${idx < chain.length - 1 ? `<div style="position: absolute; left: 16px; top: 40px; bottom: 0; width: 2px; background: #e0e0e0;"></div>` : ''}
+                            <div style="padding: 12px; background: #f5f7fa; border-radius: 8px; border-left: 4px solid #689f38;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                    <span style="font-weight: 700; color: #333;">${step.label}</span>
+                                    ${statusBadge}
+                                </div>
+                                <div style="font-size: 13px; color: #666; margin-bottom: 4px;">
+                                    批次号：<strong>${step.batchNo || '-'}</strong>
+                                </div>
+                                ${weight ? `<div style="font-size: 13px; color: #4caf50;">重量：${weight} kg</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
         const content = `
             <div class="info-grid">
@@ -592,16 +1011,194 @@ const SalesPage = {
                     <span style="font-weight: 700; font-size: 18px; color: ${product.stock > 10 ? '#689f38' : product.stock > 0 ? '#ff9800' : '#f44336'};">${product.stock || 0} 瓶</span>
                 </div>
             ` : ''}
+            <div class="section-title" style="margin-top: 20px;">批次追溯链路</div>
+            <div style="max-height: 320px; overflow-y: auto; padding: 8px;">
+                ${chainHtml}
+            </div>
+            <div class="section-title" style="margin-top: 20px;">处理记录</div>
+            <div style="max-height: 240px; overflow-y: auto;">
+                ${logsHtml}
+            </div>
             ${item.remark ? `
                 <div class="section-title" style="margin-top: 20px;">备注</div>
                 <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
             ` : ''}
             <div class="modal-footer" style="margin-top: 20px;">
+                ${(item.status === 'completed') ? `
+                    <button class="btn btn-warning" onclick="Utils.hideModal(); SalesPage.openCancelOrRefundModal('${item.id}', 'refund')">退货退款</button>
+                ` : ''}
+                ${(item.status === 'pending') ? `
+                    <button class="btn btn-secondary" onclick="Utils.hideModal(); SalesPage.openCancelOrRefundModal('${item.id}', 'cancel')">取消订单</button>
+                ` : ''}
                 <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
             </div>
         `;
 
         Utils.showModal('销售详情', content);
+    },
+
+    openCancelOrRefundModal(saleId, actionType) {
+        const sale = Storage.findById('salesRecords', saleId);
+        if (!sale) return;
+
+        const isRefund = actionType === 'refund';
+        const title = isRefund ? '退货退款' : '取消订单';
+        const hintText = isRefund
+            ? `将退还 ¥${Utils.formatNumber(sale.totalAmount, 2)}${sale.stockDeducted ? `，并恢复 ${sale.quantity} 瓶库存` : ''}`
+            : (sale.stockDeducted ? `将恢复 ${sale.quantity} 瓶库存` : '订单状态变更为已取消');
+
+        const content = `
+            <form id="cancelRefundForm">
+                <div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 16px;">
+                    <div class="info-item">
+                        <span class="label">订单号</span>
+                        <span class="value">${sale.orderNo}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">客户姓名</span>
+                        <span class="value">${Utils.escapeHtml(sale.customerName)}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">产品</span>
+                        <span class="value">${Utils.escapeHtml(sale.productName)} ${sale.spec || ''}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">数量</span>
+                        <span class="value">${sale.quantity} 瓶</span>
+                    </div>
+                </div>
+                <div style="padding: 12px 16px; background: ${isRefund ? '#fff8e1' : '#f5f5f5'}; border-radius: 8px; margin-bottom: 16px; color: #666;">
+                    <strong>📌 ${title}说明：</strong>${hintText}
+                </div>
+                <div class="form-group">
+                    <label>${title}原因 *</label>
+                    <select name="reasonType" onchange="SalesPage.onReasonTypeChange(this.value)" required>
+                        <option value="">请选择原因类型</option>
+                        ${isRefund ? `
+                            <option value="quality">质量问题</option>
+                            <option value="wrong">发错产品/规格</option>
+                            <option value="damaged">运输破损</option>
+                            <option value="customer">客户不想要了</option>
+                            <option value="expired">临期/过期</option>
+                        ` : `
+                            <option value="customer">客户取消</option>
+                            <option value="stock">库存不足</option>
+                            <option value="payment">未按时付款</option>
+                            <option value="error">录入错误</option>
+                        `}
+                        <option value="other">其他原因</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>详细说明</label>
+                    <textarea id="reasonDetail" name="reasonDetail" rows="3" placeholder="请填写详细说明（选填）"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>操作人</label>
+                    <input type="text" name="operator" placeholder="请输入操作人姓名（选填）">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="Utils.hideModal()">取消</button>
+                    <button type="submit" class="btn ${isRefund ? 'btn-danger' : 'btn-secondary'}">确认${title}</button>
+                </div>
+            </form>
+        `;
+
+        Utils.showModal(title, content);
+
+        const form = document.getElementById('cancelRefundForm');
+        const salesPage = this;
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            Utils.clearFieldErrors('cancelRefundForm');
+
+            const formData = new FormData(form);
+            const reasonType = formData.get('reasonType');
+            const reasonDetail = formData.get('reasonDetail');
+            const operator = formData.get('operator');
+
+            if (!reasonType) {
+                Utils.showFieldError('reasonDetail', '请选择原因类型');
+                return;
+            }
+
+            const reasonTypeMap = {
+                quality: '质量问题', wrong: '发错产品/规格', damaged: '运输破损',
+                customer: isRefund ? '客户不想要了' : '客户取消',
+                expired: '临期/过期', stock: '库存不足',
+                payment: '未按时付款', error: '录入错误', other: '其他原因'
+            };
+            let fullReason = reasonTypeMap[reasonType] || reasonType;
+            if (reasonDetail) fullReason += ` - ${reasonDetail}`;
+
+            const newStatus = isRefund ? 'refunded' : 'cancelled';
+            const processLogs = sale.processLogs || [];
+            let stockRestored = false;
+
+            if (sale.stockDeducted && sale.productId) {
+                const restoreResult = Storage.updateProductStock(
+                    sale.productId, 
+                    sale.quantity, 
+                    `${isRefund ? '退货恢复' : '取消恢复'} - 订单 ${sale.orderNo}`,
+                    { operator: operator, relatedId: sale.id }
+                );
+                if (restoreResult.success) {
+                    stockRestored = true;
+                }
+            }
+
+            Storage.update('salesRecords', saleId, {
+                status: newStatus,
+                stockDeducted: sale.stockDeducted && !stockRestored ? false : sale.stockDeducted
+            });
+
+            const newLogs = [...processLogs];
+            newLogs.push({
+                id: Storage.generateId ? Storage.generateId() : Date.now().toString(),
+                type: actionType,
+                reason: fullReason,
+                time: new Date().toISOString(),
+                operator: operator
+            });
+            if (stockRestored) {
+                newLogs.push({
+                    id: (Storage.generateId ? Storage.generateId() : (Date.now() + 1).toString()),
+                    type: 'stock_restore',
+                    reason: `${isRefund ? '退货' : '取消订单'}恢复库存`,
+                    quantity: sale.quantity,
+                    stockRestored: true,
+                    time: new Date().toISOString(),
+                    operator: operator
+                });
+            }
+
+            const updatedSale = Storage.findById('salesRecords', saleId);
+            if (updatedSale) {
+                updatedSale.processLogs = newLogs;
+                const allSales = Storage.get('salesRecords') || [];
+                const idx = allSales.findIndex(s => s.id === saleId);
+                if (idx !== -1) {
+                    allSales[idx] = updatedSale;
+                    Storage.set('salesRecords', allSales);
+                }
+            }
+
+            Utils.hideModal();
+            Utils.toast(`${title}成功`, 'success');
+            salesPage.refresh();
+            App.updateSidebarStats();
+        });
+    },
+
+    onReasonTypeChange(val) {
+        const reasonTextarea = document.getElementById('reasonDetail');
+        if (reasonTextarea && val === 'other') {
+            reasonTextarea.placeholder = '请详细说明原因（必填）';
+            reasonTextarea.required = true;
+        } else if (reasonTextarea) {
+            reasonTextarea.placeholder = '请填写详细说明（选填）';
+            reasonTextarea.required = false;
+        }
     },
 
     editRecord(id) {
@@ -753,6 +1350,30 @@ const SalesPage = {
             };
 
             Storage.update('salesRecords', id, data);
+            const updated = Storage.findById('salesRecords', id);
+            if (updated) {
+                const processLogs = updated.processLogs || [];
+                const changedFields = [];
+                if (productChanged) changedFields.push('产品');
+                if (quantityChanged) changedFields.push('数量');
+                if (oldStatus !== newStatus) changedFields.push(`状态(${oldStatus}→${newStatus})`);
+                if (formData.get('customerName') !== item.customerName) changedFields.push('客户姓名');
+                if (formData.get('paymentMethod') !== item.paymentMethod) changedFields.push('支付方式');
+                if (unitPrice !== item.unitPrice) changedFields.push('单价');
+                processLogs.push({
+                    id: Storage.generateId ? Storage.generateId() : Date.now().toString(),
+                    type: 'edit',
+                    reason: changedFields.length ? `编辑订单：${changedFields.join('、')}` : '编辑订单',
+                    time: new Date().toISOString(),
+                    operator: ''
+                });
+                const allSales = Storage.get('salesRecords') || [];
+                const sidx = allSales.findIndex(s => s.id === id);
+                if (sidx !== -1) {
+                    allSales[sidx].processLogs = processLogs;
+                    Storage.set('salesRecords', allSales);
+                }
+            }
             Utils.hideModal();
             Utils.toast('更新成功', 'success');
             this.refresh();
@@ -950,7 +1571,8 @@ const SalesPage = {
         });
     },
 
-    init() {
+    init(params = {}) {
+        this.navigationParams = params;
         this.refresh();
-    }
+    },
 };

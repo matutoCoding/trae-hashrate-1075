@@ -1,8 +1,33 @@
 const DryingPage = {
     currentTab: 'drying',
+    filterConditions: {
+        dateStart: '',
+        dateEnd: ''
+    },
 
     render() {
+        const params = this.navigationParams || {};
+        let hintBanner = '';
+        let todayStr = '';
+        if (params.dateFilter === 'today') {
+            const today = new Date();
+            todayStr = today.toISOString().split('T')[0];
+            this.filterConditions = {
+                dateStart: todayStr,
+                dateEnd: todayStr
+            };
+            hintBanner = `
+                <div style="padding: 10px 16px; margin-bottom: 16px; background: #e8f5e9; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #2e7d32;">
+                        📌 当前筛选：${todayStr} 记录
+                    </span>
+                    <button class="btn btn-secondary btn-sm" onclick="DryingPage.clearNavFilter()">清除筛选</button>
+                </div>
+            `;
+        }
+        this.navigationParams = {};
         return `
+            ${hintBanner}
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon green">☀️</div>
@@ -52,14 +77,36 @@ const DryingPage = {
     },
 
     renderDryingTable() {
-        const records = Storage.get('dryingRecords') || [];
+        const allRecords = Storage.get('dryingRecords') || [];
+        const { dateStart, dateEnd } = this.filterConditions;
+        const records = allRecords.filter(item => {
+            if (dateStart && !Utils.isDateInRange(item.createdAt, dateStart, null)) return false;
+            if (dateEnd && !Utils.isDateInRange(item.createdAt, null, dateEnd)) return false;
+            return true;
+        });
         const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         if (sorted.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">☀️</div><div class="empty-state-text">暂无晾晒记录</div></div>`;
+            return `
+                <div class="filter-bar">
+                    <input type="date" value="${this.filterConditions.dateStart}" onchange="DryingPage.onFilterChange('dateStart', this.value)">
+                    <span>至</span>
+                    <input type="date" value="${this.filterConditions.dateEnd}" onchange="DryingPage.onFilterChange('dateEnd', this.value)">
+                    <button class="btn btn-secondary btn-sm" onclick="DryingPage.refresh()">查询</button>
+                    <button class="btn btn-secondary btn-sm" onclick="DryingPage.resetFilter()">重置</button>
+                </div>
+                <div class="empty-state"><div class="empty-state-icon">☀️</div><div class="empty-state-text">暂无晾晒记录</div></div>
+            `;
         }
 
         return `
+            <div class="filter-bar">
+                <input type="date" value="${this.filterConditions.dateStart}" onchange="DryingPage.onFilterChange('dateStart', this.value)">
+                <span>至</span>
+                <input type="date" value="${this.filterConditions.dateEnd}" onchange="DryingPage.onFilterChange('dateEnd', this.value)">
+                <button class="btn btn-secondary btn-sm" onclick="DryingPage.refresh()">查询</button>
+                <button class="btn btn-secondary btn-sm" onclick="DryingPage.resetFilter()">重置</button>
+            </div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -105,14 +152,36 @@ const DryingPage = {
     },
 
     renderShellingTable() {
-        const records = Storage.get('shellingRecords') || [];
+        const allRecords = Storage.get('shellingRecords') || [];
+        const { dateStart, dateEnd } = this.filterConditions;
+        const records = allRecords.filter(item => {
+            if (dateStart && !Utils.isDateInRange(item.createdAt, dateStart, null)) return false;
+            if (dateEnd && !Utils.isDateInRange(item.createdAt, null, dateEnd)) return false;
+            return true;
+        });
         const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         if (sorted.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">🌰</div><div class="empty-state-text">暂无剥壳记录</div></div>`;
+            return `
+                <div class="filter-bar">
+                    <input type="date" value="${this.filterConditions.dateStart}" onchange="DryingPage.onFilterChange('dateStart', this.value)">
+                    <span>至</span>
+                    <input type="date" value="${this.filterConditions.dateEnd}" onchange="DryingPage.onFilterChange('dateEnd', this.value)">
+                    <button class="btn btn-secondary btn-sm" onclick="DryingPage.refresh()">查询</button>
+                    <button class="btn btn-secondary btn-sm" onclick="DryingPage.resetFilter()">重置</button>
+                </div>
+                <div class="empty-state"><div class="empty-state-icon">🌰</div><div class="empty-state-text">暂无剥壳记录</div></div>
+            `;
         }
 
         return `
+            <div class="filter-bar">
+                <input type="date" value="${this.filterConditions.dateStart}" onchange="DryingPage.onFilterChange('dateStart', this.value)">
+                <span>至</span>
+                <input type="date" value="${this.filterConditions.dateEnd}" onchange="DryingPage.onFilterChange('dateEnd', this.value)">
+                <button class="btn btn-secondary btn-sm" onclick="DryingPage.refresh()">查询</button>
+                <button class="btn btn-secondary btn-sm" onclick="DryingPage.resetFilter()">重置</button>
+            </div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -877,6 +946,26 @@ const DryingPage = {
         this.refresh();
     },
 
+    onFilterChange(field, value) {
+        this.filterConditions[field] = value;
+    },
+
+    resetFilter() {
+        this.filterConditions = {
+            dateStart: '',
+            dateEnd: ''
+        };
+        this.refresh();
+    },
+
+    clearNavFilter() {
+        this.filterConditions = {
+            dateStart: '',
+            dateEnd: ''
+        };
+        this.refresh();
+    },
+
     refresh() {
         const contentArea = document.getElementById('contentArea');
         contentArea.innerHTML = this.render();
@@ -891,7 +980,8 @@ const DryingPage = {
         });
     },
 
-    init() {
+    init(params = {}) {
+        this.navigationParams = params;
         this.refresh();
     }
 };

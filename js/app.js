@@ -89,18 +89,24 @@ const App = {
         dateEl.textContent = dateStr;
     },
 
-    switchPage(pageName) {
-        if (this.currentPage === pageName) return;
+    goToPage(pageName, params = {}) {
+        if (this.pages[pageName]) {
+            this.switchPage(pageName, params);
+        }
+    },
+
+    switchPage(pageName, params = {}) {
+        if (this.currentPage === pageName && Object.keys(params).length === 0) return;
 
         document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.toggle('active', item.dataset.page === pageName);
         });
 
         this.currentPage = pageName;
-        this.loadPage(pageName);
+        this.loadPage(pageName, params);
     },
 
-    loadPage(pageName) {
+    loadPage(pageName, params = {}) {
         const pageConfig = this.pages[pageName];
         if (!pageConfig) return;
 
@@ -135,13 +141,8 @@ const App = {
         }
 
         pageConfig.instance = pageInstance;
-        pageInstance.init();
-    },
-
-    goToPage(pageName) {
-        if (this.pages[pageName]) {
-            this.switchPage(pageName);
-        }
+        pageInstance.init(params);
+        pageInstance.render();
     },
 
     updateSidebarStats() {

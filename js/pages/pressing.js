@@ -1,8 +1,33 @@
 const PressingPage = {
     currentTab: 'roasting',
+    filterConditions: {
+        dateStart: '',
+        dateEnd: ''
+    },
 
     render() {
+        const params = this.navigationParams || {};
+        let hintBanner = '';
+        let todayStr = '';
+        if (params.dateFilter === 'today') {
+            const today = new Date();
+            todayStr = today.toISOString().split('T')[0];
+            this.filterConditions = {
+                dateStart: todayStr,
+                dateEnd: todayStr
+            };
+            hintBanner = `
+                <div style="padding: 10px 16px; margin-bottom: 16px; background: #e8f5e9; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #2e7d32;">
+                        📌 当前筛选：${todayStr} 记录
+                    </span>
+                    <button class="btn btn-secondary btn-sm" onclick="PressingPage.clearNavFilter()">清除筛选</button>
+                </div>
+            `;
+        }
+        this.navigationParams = {};
         return `
+            ${hintBanner}
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon green">🔥</div>
@@ -55,14 +80,36 @@ const PressingPage = {
     },
 
     renderRoastingTable() {
-        const records = Storage.get('roastingRecords') || [];
+        const allRecords = Storage.get('roastingRecords') || [];
+        const { dateStart, dateEnd } = this.filterConditions;
+        const records = allRecords.filter(item => {
+            if (dateStart && !Utils.isDateInRange(item.createdAt, dateStart, null)) return false;
+            if (dateEnd && !Utils.isDateInRange(item.createdAt, null, dateEnd)) return false;
+            return true;
+        });
         const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         if (sorted.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">🔥</div><div class="empty-state-text">暂无炒制记录</div></div>`;
+            return `
+                <div class="filter-bar">
+                    <input type="date" value="${this.filterConditions.dateStart}" onchange="PressingPage.onFilterChange('dateStart', this.value)">
+                    <span>至</span>
+                    <input type="date" value="${this.filterConditions.dateEnd}" onchange="PressingPage.onFilterChange('dateEnd', this.value)">
+                    <button class="btn btn-secondary btn-sm" onclick="PressingPage.refresh()">查询</button>
+                    <button class="btn btn-secondary btn-sm" onclick="PressingPage.resetFilter()">重置</button>
+                </div>
+                <div class="empty-state"><div class="empty-state-icon">🔥</div><div class="empty-state-text">暂无炒制记录</div></div>
+            `;
         }
 
         return `
+            <div class="filter-bar">
+                <input type="date" value="${this.filterConditions.dateStart}" onchange="PressingPage.onFilterChange('dateStart', this.value)">
+                <span>至</span>
+                <input type="date" value="${this.filterConditions.dateEnd}" onchange="PressingPage.onFilterChange('dateEnd', this.value)">
+                <button class="btn btn-secondary btn-sm" onclick="PressingPage.refresh()">查询</button>
+                <button class="btn btn-secondary btn-sm" onclick="PressingPage.resetFilter()">重置</button>
+            </div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -108,14 +155,36 @@ const PressingPage = {
     },
 
     renderPressingTable() {
-        const records = Storage.get('pressingRecords') || [];
+        const allRecords = Storage.get('pressingRecords') || [];
+        const { dateStart, dateEnd } = this.filterConditions;
+        const records = allRecords.filter(item => {
+            if (dateStart && !Utils.isDateInRange(item.createdAt, dateStart, null)) return false;
+            if (dateEnd && !Utils.isDateInRange(item.createdAt, null, dateEnd)) return false;
+            return true;
+        });
         const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         if (sorted.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">⚙️</div><div class="empty-state-text">暂无压榨记录</div></div>`;
+            return `
+                <div class="filter-bar">
+                    <input type="date" value="${this.filterConditions.dateStart}" onchange="PressingPage.onFilterChange('dateStart', this.value)">
+                    <span>至</span>
+                    <input type="date" value="${this.filterConditions.dateEnd}" onchange="PressingPage.onFilterChange('dateEnd', this.value)">
+                    <button class="btn btn-secondary btn-sm" onclick="PressingPage.refresh()">查询</button>
+                    <button class="btn btn-secondary btn-sm" onclick="PressingPage.resetFilter()">重置</button>
+                </div>
+                <div class="empty-state"><div class="empty-state-icon">⚙️</div><div class="empty-state-text">暂无压榨记录</div></div>
+            `;
         }
 
         return `
+            <div class="filter-bar">
+                <input type="date" value="${this.filterConditions.dateStart}" onchange="PressingPage.onFilterChange('dateStart', this.value)">
+                <span>至</span>
+                <input type="date" value="${this.filterConditions.dateEnd}" onchange="PressingPage.onFilterChange('dateEnd', this.value)">
+                <button class="btn btn-secondary btn-sm" onclick="PressingPage.refresh()">查询</button>
+                <button class="btn btn-secondary btn-sm" onclick="PressingPage.resetFilter()">重置</button>
+            </div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -161,7 +230,13 @@ const PressingPage = {
     },
 
     renderStats() {
-        const pressingRecords = Storage.get('pressingRecords') || [];
+        const allPressingRecords = Storage.get('pressingRecords') || [];
+        const { dateStart, dateEnd } = this.filterConditions;
+        const pressingRecords = allPressingRecords.filter(item => {
+            if (dateStart && !Utils.isDateInRange(item.createdAt, dateStart, null)) return false;
+            if (dateEnd && !Utils.isDateInRange(item.createdAt, null, dateEnd)) return false;
+            return true;
+        });
         const recentRecords = pressingRecords.slice(0, 10);
 
         const totalKernel = pressingRecords.reduce((sum, r) => sum + (r.kernelWeight || 0), 0);
@@ -177,6 +252,13 @@ const PressingPage = {
             : 0;
 
         return `
+            <div class="filter-bar">
+                <input type="date" value="${this.filterConditions.dateStart}" onchange="PressingPage.onFilterChange('dateStart', this.value)">
+                <span>至</span>
+                <input type="date" value="${this.filterConditions.dateEnd}" onchange="PressingPage.onFilterChange('dateEnd', this.value)">
+                <button class="btn btn-secondary btn-sm" onclick="PressingPage.refresh()">查询</button>
+                <button class="btn btn-secondary btn-sm" onclick="PressingPage.resetFilter()">重置</button>
+            </div>
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
                 <div style="background: #f5f7fa; padding: 20px; border-radius: 8px; text-align: center;">
                     <div style="font-size: 28px; font-weight: 700; color: #689f38;">${Utils.formatNumber(avgYield, 2)}%</div>
@@ -1068,6 +1150,26 @@ const PressingPage = {
         App.updateSidebarStats();
     },
 
+    onFilterChange(field, value) {
+        this.filterConditions[field] = value;
+    },
+
+    resetFilter() {
+        this.filterConditions = {
+            dateStart: '',
+            dateEnd: ''
+        };
+        this.refresh();
+    },
+
+    clearNavFilter() {
+        this.filterConditions = {
+            dateStart: '',
+            dateEnd: ''
+        };
+        this.refresh();
+    },
+
     refresh() {
         const contentArea = document.getElementById('contentArea');
         contentArea.innerHTML = this.render();
@@ -1082,7 +1184,8 @@ const PressingPage = {
         });
     },
 
-    init() {
+    init(params = {}) {
+        this.navigationParams = params;
         this.refresh();
     }
 };

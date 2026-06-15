@@ -1,8 +1,33 @@
 const RefiningPage = {
     currentTab: 'refining',
+    filterConditions: {
+        dateStart: '',
+        dateEnd: ''
+    },
 
     render() {
+        const params = this.navigationParams || {};
+        let hintBanner = '';
+        let todayStr = '';
+        if (params.dateFilter === 'today') {
+            const today = new Date();
+            todayStr = today.toISOString().split('T')[0];
+            this.filterConditions = {
+                dateStart: todayStr,
+                dateEnd: todayStr
+            };
+            hintBanner = `
+                <div style="padding: 10px 16px; margin-bottom: 16px; background: #e8f5e9; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #2e7d32;">
+                        📌 当前筛选：${todayStr} 记录
+                    </span>
+                    <button class="btn btn-secondary btn-sm" onclick="RefiningPage.clearNavFilter()">清除筛选</button>
+                </div>
+            `;
+        }
+        this.navigationParams = {};
         return `
+            ${hintBanner}
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon green">🏺</div>
@@ -52,14 +77,36 @@ const RefiningPage = {
     },
 
     renderRefiningTable() {
-        const records = Storage.get('refiningRecords') || [];
+        const allRecords = Storage.get('refiningRecords') || [];
+        const { dateStart, dateEnd } = this.filterConditions;
+        const records = allRecords.filter(item => {
+            if (dateStart && !Utils.isDateInRange(item.createdAt, dateStart, null)) return false;
+            if (dateEnd && !Utils.isDateInRange(item.createdAt, null, dateEnd)) return false;
+            return true;
+        });
         const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         if (sorted.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">🏺</div><div class="empty-state-text">暂无精炼记录</div></div>`;
+            return `
+                <div class="filter-bar">
+                    <input type="date" value="${this.filterConditions.dateStart}" onchange="RefiningPage.onFilterChange('dateStart', this.value)">
+                    <span>至</span>
+                    <input type="date" value="${this.filterConditions.dateEnd}" onchange="RefiningPage.onFilterChange('dateEnd', this.value)">
+                    <button class="btn btn-secondary btn-sm" onclick="RefiningPage.refresh()">查询</button>
+                    <button class="btn btn-secondary btn-sm" onclick="RefiningPage.resetFilter()">重置</button>
+                </div>
+                <div class="empty-state"><div class="empty-state-icon">🏺</div><div class="empty-state-text">暂无精炼记录</div></div>
+            `;
         }
 
         return `
+            <div class="filter-bar">
+                <input type="date" value="${this.filterConditions.dateStart}" onchange="RefiningPage.onFilterChange('dateStart', this.value)">
+                <span>至</span>
+                <input type="date" value="${this.filterConditions.dateEnd}" onchange="RefiningPage.onFilterChange('dateEnd', this.value)">
+                <button class="btn btn-secondary btn-sm" onclick="RefiningPage.refresh()">查询</button>
+                <button class="btn btn-secondary btn-sm" onclick="RefiningPage.resetFilter()">重置</button>
+            </div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -109,14 +156,36 @@ const RefiningPage = {
     },
 
     renderBottlingTable() {
-        const records = Storage.get('bottlingRecords') || [];
+        const allRecords = Storage.get('bottlingRecords') || [];
+        const { dateStart, dateEnd } = this.filterConditions;
+        const records = allRecords.filter(item => {
+            if (dateStart && !Utils.isDateInRange(item.createdAt, dateStart, null)) return false;
+            if (dateEnd && !Utils.isDateInRange(item.createdAt, null, dateEnd)) return false;
+            return true;
+        });
         const sorted = records.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         if (sorted.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">🍾</div><div class="empty-state-text">暂无灌装记录</div></div>`;
+            return `
+                <div class="filter-bar">
+                    <input type="date" value="${this.filterConditions.dateStart}" onchange="RefiningPage.onFilterChange('dateStart', this.value)">
+                    <span>至</span>
+                    <input type="date" value="${this.filterConditions.dateEnd}" onchange="RefiningPage.onFilterChange('dateEnd', this.value)">
+                    <button class="btn btn-secondary btn-sm" onclick="RefiningPage.refresh()">查询</button>
+                    <button class="btn btn-secondary btn-sm" onclick="RefiningPage.resetFilter()">重置</button>
+                </div>
+                <div class="empty-state"><div class="empty-state-icon">🍾</div><div class="empty-state-text">暂无灌装记录</div></div>
+            `;
         }
 
         return `
+            <div class="filter-bar">
+                <input type="date" value="${this.filterConditions.dateStart}" onchange="RefiningPage.onFilterChange('dateStart', this.value)">
+                <span>至</span>
+                <input type="date" value="${this.filterConditions.dateEnd}" onchange="RefiningPage.onFilterChange('dateEnd', this.value)">
+                <button class="btn btn-secondary btn-sm" onclick="RefiningPage.refresh()">查询</button>
+                <button class="btn btn-secondary btn-sm" onclick="RefiningPage.resetFilter()">重置</button>
+            </div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -775,20 +844,51 @@ const RefiningPage = {
 
         const chain = Storage.getBatchChain('bottlingRecords', id);
         const refining = chain.source;
+        const traceData = Storage.getFullBatchChainFromBottling(id);
+        const fullChain = traceData.chain || [];
 
-        let sourceHtml = '';
-        if (refining) {
-            sourceHtml = `
-                <div style="padding: 8px 12px; background: #e8f4fd; border-radius: 6px; cursor: pointer;"
-                     onclick="Utils.hideModal(); App.switchPage('refining');">
-                    <span style="color: #1976d2; font-weight: 600;">${refining.batchNo}</span>
-                    <span style="color: #888; margin-left: 8px;">${Utils.formatNumber(refining.refinedOilWeight || 0, 1)}kg精炼油</span>
-                    <span style="color: #1976d2; font-size: 12px; margin-left: 8px;">← 来源精炼</span>
-                </div>
-            `;
-        } else {
-            sourceHtml = '<div style="color: #aaa; font-size: 13px;">无来源（直接灌装）</div>';
-        }
+        const chainHtml = fullChain.length === 0
+            ? `<div class="empty-state" style="padding: 20px;"><div class="empty-state-icon">🔗</div><div class="empty-state-text">暂无批次追溯信息</div></div>`
+            : fullChain.map((step, idx) => {
+                const weightFieldMap = {
+                    bottlingRecords: 'bottledQuantity',
+                    refiningRecords: 'refinedOilWeight',
+                    filteringRecords: 'filteredOilWeight',
+                    pressingRecords: 'crudeOilWeight',
+                    roastingRecords: 'kernelWeight',
+                    shellingRecords: 'kernelWeight',
+                    dryingRecords: 'driedWeight',
+                    purchases: 'weight'
+                };
+                const wf = weightFieldMap[step.type] || 'weight';
+                const weight = step.data[wf] || step.data.weight || 0;
+                const statusMap = {
+                    completed: '<span class="badge badge-success">已完成</span>',
+                    processing: '<span class="badge badge-warning">进行中</span>',
+                    pending: '<span class="badge badge-info">待处理</span>'
+                };
+                const statusBadge = statusMap[step.status] || (step.status ? `<span class="badge badge-secondary">${step.status}</span>` : '');
+                return `
+                    <div style="display: flex; align-items: flex-start; margin-bottom: 0;">
+                        <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #8bc34a 0%, #689f38 100%); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; margin-right: 12px;">
+                            ${idx + 1}
+                        </div>
+                        <div style="flex: 1; padding-bottom: ${idx < fullChain.length - 1 ? '20px' : '0'}; position: relative;">
+                            ${idx < fullChain.length - 1 ? `<div style="position: absolute; left: 16px; top: 40px; bottom: 0; width: 2px; background: #e0e0e0;"></div>` : ''}
+                            <div style="padding: 12px; background: #f5f7fa; border-radius: 8px; border-left: 4px solid #689f38;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                    <span style="font-weight: 700; color: #333;">${step.label}</span>
+                                    ${statusBadge}
+                                </div>
+                                <div style="font-size: 13px; color: #666; margin-bottom: 4px;">
+                                    批次号：<strong>${step.batchNo || '-'}</strong>
+                                </div>
+                                ${weight ? `<div style="font-size: 13px; color: #4caf50;">重量：${weight} kg</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
         const product = item.productId ? Storage.findById('products', item.productId) : null;
 
@@ -837,10 +937,9 @@ const RefiningPage = {
                 </div>
             ` : ''}
 
-            <div class="section-title" style="margin-top: 20px;">批次流转</div>
-            <div style="padding: 12px; background: #fafafa; border-radius: 8px; margin-bottom: 12px;">
-                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">📥 来源批次</div>
-                ${sourceHtml}
+            <div class="section-title" style="margin-top: 20px;">批次追溯链路</div>
+            <div style="max-height: 360px; overflow-y: auto; padding: 8px;">
+                ${chainHtml}
             </div>
 
             ${item.remark ? `
@@ -1018,6 +1117,26 @@ const RefiningPage = {
         App.updateSidebarStats();
     },
 
+    onFilterChange(field, value) {
+        this.filterConditions[field] = value;
+    },
+
+    resetFilter() {
+        this.filterConditions = {
+            dateStart: '',
+            dateEnd: ''
+        };
+        this.refresh();
+    },
+
+    clearNavFilter() {
+        this.filterConditions = {
+            dateStart: '',
+            dateEnd: ''
+        };
+        this.refresh();
+    },
+
     refresh() {
         const contentArea = document.getElementById('contentArea');
         contentArea.innerHTML = this.render();
@@ -1032,7 +1151,8 @@ const RefiningPage = {
         });
     },
 
-    init() {
+    init(params = {}) {
+        this.navigationParams = params;
         this.refresh();
     }
 };

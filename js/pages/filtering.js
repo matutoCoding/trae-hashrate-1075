@@ -6,7 +6,29 @@ const FilteringPage = {
     },
 
     render() {
+        const params = this.navigationParams || {};
+        let hintBanner = '';
+        let todayStr = '';
+        if (params.dateFilter === 'today') {
+            const today = new Date();
+            todayStr = today.toISOString().split('T')[0];
+            this.filters = {
+                method: '',
+                dateStart: todayStr,
+                dateEnd: todayStr
+            };
+            hintBanner = `
+                <div style="padding: 10px 16px; margin-bottom: 16px; background: #e8f5e9; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #2e7d32;">
+                        📌 当前筛选：${todayStr} 记录
+                    </span>
+                    <button class="btn btn-secondary btn-sm" onclick="FilteringPage.clearNavFilter()">清除筛选</button>
+                </div>
+            `;
+        }
+        this.navigationParams = {};
         return `
+            ${hintBanner}
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon green">🧪</div>
@@ -558,12 +580,22 @@ const FilteringPage = {
         this.refresh();
     },
 
+    clearNavFilter() {
+        this.filters = {
+            method: '',
+            dateStart: '',
+            dateEnd: ''
+        };
+        this.refresh();
+    },
+
     refresh() {
         const contentArea = document.getElementById('contentArea');
         contentArea.innerHTML = this.render();
     },
 
-    init() {
+    init(params = {}) {
+        this.navigationParams = params;
         this.refresh();
     }
 };

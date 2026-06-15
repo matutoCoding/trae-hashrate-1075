@@ -268,8 +268,10 @@ const Storage = {
         
         const bottlingRecords = this.get('bottlingRecords') || [];
         let bottling = null;
-        if (sale.productId) {
-            bottling = bottlingRecords.find(b => b.productId === sale.productId);
+        if (sale.bottlingId) {
+            bottling = this.findById('bottlingRecords', sale.bottlingId);
+        } else if (sale.productId) {
+            bottling = bottlingRecords.find(b => b.productId === sale.productId && b.status === 'completed');
         }
         
         const chain = bottling ? this.getFullBatchChainFromBottling(bottling.id) : [];
@@ -487,12 +489,43 @@ const Storage = {
                     oilWeight: 60,
                     bottleSpec: '500ml',
                     bottleCount: 110,
+                    _soldCount: 20,
                     labelType: '精品山茶油',
                     productId: 'prod_001',
                     operator: '王大姐',
                     status: 'completed',
                     createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
                     remark: ''
+                },
+                {
+                    id: 'bottling_002',
+                    batchNo: 'GZ202401002',
+                    refiningId: 'refining_001',
+                    oilWeight: 45,
+                    bottleSpec: '1L',
+                    bottleCount: 45,
+                    _soldCount: 5,
+                    labelType: '一级山茶油',
+                    productId: 'prod_002',
+                    operator: '王大姐',
+                    status: 'completed',
+                    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
+                    remark: ''
+                },
+                {
+                    id: 'bottling_003',
+                    batchNo: 'GZ202401003',
+                    refiningId: 'refining_002',
+                    oilWeight: 50,
+                    bottleSpec: '2.5L',
+                    bottleCount: 20,
+                    _soldCount: 0,
+                    labelType: '农家山茶油',
+                    productId: 'prod_003',
+                    operator: '李师傅',
+                    status: 'completed',
+                    createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
+                    remark: '第二批灌装'
                 }
             ];
             this.set('bottlingRecords', mockBottling);
@@ -536,6 +569,7 @@ const Storage = {
                     customerName: '陈女士',
                     customerPhone: '13700137001',
                     productId: 'prod_001',
+                    bottlingId: 'bottling_001',
                     productName: '精品山茶油',
                     spec: '500ml',
                     quantity: 20,
@@ -553,6 +587,7 @@ const Storage = {
                     customerName: '刘先生',
                     customerPhone: '13600136002',
                     productId: 'prod_002',
+                    bottlingId: 'bottling_002',
                     productName: '一级山茶油',
                     spec: '1L',
                     quantity: 5,

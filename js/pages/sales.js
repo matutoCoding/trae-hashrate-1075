@@ -220,10 +220,10 @@ const SalesPage = {
                                 <td>
                                     <div class="action-buttons">
                                         <button class="btn btn-outline btn-sm" onclick="SalesPage.viewRecord('${item.id}')">查看</button>
-                                        ${(item.status === 'completed') ? `
+                                        ${(item.status === 'completed' && !item.stockRestored) ? `
                                             <button class="btn btn-warning btn-sm" onclick="SalesPage.openCancelOrRefundModal('${item.id}', 'refund')">退货</button>
                                         ` : ''}
-                                        ${(item.status === 'pending') ? `
+                                        ${(item.status === 'pending' && !item.stockRestored) ? `
                                             <button class="btn btn-secondary btn-sm" onclick="SalesPage.openCancelOrRefundModal('${item.id}', 'cancel')">取消</button>
                                         ` : ''}
                                         ${(item.status !== 'cancelled' && item.status !== 'refunded') ? `
@@ -738,6 +738,12 @@ const SalesPage = {
                         <input type="number" id="saleQuantity" name="quantity" min="1" value="1" required oninput="SalesPage.calcTotal()">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label>出库灌装批次 *</label>
+                    <select id="bottlingSelect" name="bottlingId" required>
+                        <option value="">请先选择产品</option>
+                    </select>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>单价(元)</label>
@@ -787,6 +793,7 @@ const SalesPage = {
 
             const formData = new FormData(form);
             const productId = formData.get('productId');
+            const bottlingId = formData.get('bottlingId');
             const product = products.find(p => p.id === productId);
             const quantity = parseInt(formData.get('quantity')) || 0;
             const unitPrice = parseFloat(formData.get('unitPrice')) || 0;
@@ -810,8 +817,30 @@ const SalesPage = {
                 return;
             }
 
+            if (!bottlingId) {
+                Utils.showFieldError('saleQuantity', '请选择出库灌装批次');
+                return;
+            }
+
+            const bottling = Storage.findById('bottlingRecords', bottlingId);
+            if (!bottling) {
+                Utils.showFieldError('saleQuantity', '所选灌装批次不存在');
+                return;
+            }
+
+            const remainingQty = (bottling.bottleCount || 0) - (bottling._soldCount || 0);
+            if (quantity > remainingQty) {
+                Utils.showFieldError('saleQuantity', `该批次剩余${remainingQty}瓶，不足${quantity}瓶`);
+                return;
+            }
+
             if (status === 'completed') {
-                const stockResult = Storage.updateProductStock(productId, -quantity, `销售出库 - 订单 ${formData.get('orderNo')}`);
+                const stockResult = Storage.updateProductStock(
+                    productId, 
+                    -quantity, 
+                    `销售出库 - 订单 ${formData.get('orderNo')}`,
+                    { relatedId: bottlingId }
+                );
                 if (!stockResult.success) {
                     Utils.showFieldError('saleQuantity', stockResult.message || '库存不足');
                     return;
@@ -823,6 +852,7 @@ const SalesPage = {
                 customerName: formData.get('customerName'),
                 customerPhone: formData.get('customerPhone'),
                 productId: productId,
+                bottlingId: bottlingId,
                 productName: product ? product.name : '',
                 spec: product ? product.spec : '',
                 quantity: quantity,
@@ -842,6 +872,14 @@ const SalesPage = {
             };
 
             Storage.add('salesRecords', data);
+            
+            const allBottling = Storage.get('bottlingRecords') || [];
+            const bIdx = allBottling.findIndex(b => b.id === bottlingId);
+            if (bIdx !== -1) {
+                allBottling[bIdx]._soldCount = (allBottling[bIdx]._soldCount || 0) + quantity;
+                Storage.set('bottlingRecords', allBottling);
+            }
+            
             Utils.hideModal();
             Utils.toast('保存成功', 'success');
             this.refresh();
@@ -857,6 +895,28 @@ const SalesPage = {
         if (option && option.dataset.price) {
             form.unitPrice.value = option.dataset.price;
             this.calcTotal();
+        }
+        
+        const bottlingSelect = form.bottlingId;
+        if (bottlingSelect) {
+            const productId = select.value;
+            if (!productId) {
+                bottlingSelect.innerHTML = '<option value="">请先选择产品</option>';
+                return;
+            }
+            const allBottling = Storage.get('bottlingRecords') || [];
+            const productBottling = allBottling.filter(b => b.productId === productId && b.status === 'completed');
+            if (productBottling.length === 0) {
+                bottlingSelect.innerHTML = '<option value="">该产品暂无可用灌装批次</option>';
+                return;
+            }
+            bottlingSelect.innerHTML = '<option value="">请选择出库批次</option>' + 
+                productBottling.map(b => {
+                    const remaining = (b.bottleCount || 0) - (b._soldCount || 0);
+                    return `<option value="${b.id}" data-batchno="${b.batchNo}" data-remaining="${remaining}">
+                        ${b.batchNo} - ${b.bottleSpec} - 剩余${remaining}瓶 - ${Utils.formatDate(b.createdAt)}
+                    </option>`;
+                }).join('');
         }
     },
 
@@ -1000,8 +1060,16 @@ const SalesPage = {
                     <span class="value">${item.stockDeducted ? '<span class="badge badge-success">已扣减</span>' : '<span class="badge badge-warning">未扣减</span>'}</span>
                 </div>
                 <div class="info-item">
+                    <span class="label">出库批次</span>
+                    <span class="value">${item.bottlingId ? traceData.bottling ? traceData.bottling.batchNo : item.bottlingId : '未指定'}</span>
+                </div>
+                <div class="info-item">
                     <span class="label">销售时间</span>
                     <span class="value">${Utils.formatDateTime(item.createdAt)}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">库存恢复</span>
+                    <span class="value">${item.stockRestored ? '<span class="badge badge-success">已恢复</span>' : '<span class="badge badge-secondary">未恢复</span>'}</span>
                 </div>
             </div>
             ${product ? `
@@ -1024,10 +1092,10 @@ const SalesPage = {
                 <p style="padding: 10px; background: #f5f5f5; border-radius: 6px;">${Utils.escapeHtml(item.remark)}</p>
             ` : ''}
             <div class="modal-footer" style="margin-top: 20px;">
-                ${(item.status === 'completed') ? `
+                ${(item.status === 'completed' && !item.stockRestored) ? `
                     <button class="btn btn-warning" onclick="Utils.hideModal(); SalesPage.openCancelOrRefundModal('${item.id}', 'refund')">退货退款</button>
                 ` : ''}
-                ${(item.status === 'pending') ? `
+                ${(item.status === 'pending' && !item.stockRestored) ? `
                     <button class="btn btn-secondary" onclick="Utils.hideModal(); SalesPage.openCancelOrRefundModal('${item.id}', 'cancel')">取消订单</button>
                 ` : ''}
                 <button class="btn btn-secondary" onclick="Utils.hideModal()">关闭</button>
@@ -1040,6 +1108,11 @@ const SalesPage = {
     openCancelOrRefundModal(saleId, actionType) {
         const sale = Storage.findById('salesRecords', saleId);
         if (!sale) return;
+
+        if (sale.status === 'refunded' || sale.status === 'cancelled' || sale.stockRestored) {
+            Utils.toast('该订单已处理，无法重复操作', 'warning');
+            return;
+        }
 
         const isRefund = actionType === 'refund';
         const title = isRefund ? '退货退款' : '取消订单';
@@ -1144,12 +1217,21 @@ const SalesPage = {
                 );
                 if (restoreResult.success) {
                     stockRestored = true;
+                    if (sale.bottlingId) {
+                        const allBottling = Storage.get('bottlingRecords') || [];
+                        const bIdx = allBottling.findIndex(b => b.id === sale.bottlingId);
+                        if (bIdx !== -1) {
+                            allBottling[bIdx]._soldCount = Math.max(0, (allBottling[bIdx]._soldCount || 0) - sale.quantity);
+                            Storage.set('bottlingRecords', allBottling);
+                        }
+                    }
                 }
             }
 
             Storage.update('salesRecords', saleId, {
                 status: newStatus,
-                stockDeducted: sale.stockDeducted && !stockRestored ? false : sale.stockDeducted
+                stockDeducted: stockRestored ? false : sale.stockDeducted,
+                stockRestored: stockRestored
             });
 
             const newLogs = [...processLogs];
@@ -1241,6 +1323,12 @@ const SalesPage = {
                         <input type="number" id="saleQuantity" name="quantity" min="1" value="${item.quantity}" required oninput="SalesPage.calcTotal()">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label>出库灌装批次 *</label>
+                    <select id="bottlingSelect" name="bottlingId" required>
+                        <option value="">请先选择产品</option>
+                    </select>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>单价(元)</label>
@@ -1284,18 +1372,41 @@ const SalesPage = {
         `;
 
         Utils.showModal('编辑销售记录', content);
+        
+        setTimeout(() => {
+            SalesPage.onProductChange();
+            const bottlingSelect = document.getElementById('bottlingSelect');
+            if (bottlingSelect && item.bottlingId) {
+                bottlingSelect.value = item.bottlingId;
+            }
+        }, 50);
 
         const form = document.getElementById('saleForm');
+        const salesPage = this;
         form.addEventListener('submit', (e) => {
             e.preventDefault();
             Utils.clearFieldErrors('saleForm');
 
             const formData = new FormData(form);
             const productId = formData.get('productId');
+            const newBottlingId = formData.get('bottlingId');
             const product = products.find(p => p.id === productId);
             const quantity = parseInt(formData.get('quantity')) || 0;
             const unitPrice = parseFloat(formData.get('unitPrice')) || 0;
             const newStatus = formData.get('status');
+
+            const oldStatus = item.status;
+            const statusGoingToCancelled = (oldStatus !== 'cancelled' && oldStatus !== 'refunded') && 
+                                          (newStatus === 'cancelled' || newStatus === 'refunded');
+            
+            if (statusGoingToCancelled) {
+                Utils.hideModal();
+                const actionType = newStatus === 'refunded' ? 'refund' : 'cancel';
+                setTimeout(() => {
+                    salesPage.openCancelOrRefundModal(id, actionType);
+                }, 100);
+                return;
+            }
 
             const nameCheck = Utils.validate.notEmpty(formData.get('customerName'), '客户姓名');
             if (!nameCheck.valid) {
@@ -1309,11 +1420,16 @@ const SalesPage = {
                 return;
             }
 
-            const oldStatus = item.status;
+            if (!newBottlingId) {
+                Utils.showFieldError('saleQuantity', '请选择出库灌装批次');
+                return;
+            }
+
             const oldStockDeducted = item.stockDeducted;
             const newStockDeducted = newStatus === 'completed';
             const productChanged = productId !== item.productId;
             const quantityChanged = quantity !== item.quantity;
+            const bottlingChanged = newBottlingId !== item.bottlingId;
 
             if (oldStockDeducted && (productChanged || quantityChanged || !newStockDeducted)) {
                 const rollbackResult = Storage.updateProductStock(item.productId, item.quantity, `销售回滚 - 订单 ${item.orderNo}`);
@@ -1321,16 +1437,38 @@ const SalesPage = {
                     Utils.toast('库存回滚失败', 'error');
                     return;
                 }
+                if (item.bottlingId) {
+                    const allBottling = Storage.get('bottlingRecords') || [];
+                    const oldBIdx = allBottling.findIndex(b => b.id === item.bottlingId);
+                    if (oldBIdx !== -1) {
+                        allBottling[oldBIdx]._soldCount = Math.max(0, (allBottling[oldBIdx]._soldCount || 0) - item.quantity);
+                        Storage.set('bottlingRecords', allBottling);
+                    }
+                }
             }
 
-            if (newStockDeducted && (!oldStockDeducted || productChanged || quantityChanged)) {
+            if (newStockDeducted && (!oldStockDeducted || productChanged || quantityChanged || bottlingChanged)) {
                 const deductResult = Storage.updateProductStock(productId, -quantity, `销售出库 - 订单 ${item.orderNo}`);
                 if (!deductResult.success) {
                     Utils.showFieldError('saleQuantity', deductResult.message || '库存不足');
                     if (oldStockDeducted && (productChanged || quantityChanged)) {
                         Storage.updateProductStock(item.productId, -item.quantity, `销售恢复 - 订单 ${item.orderNo}`);
+                        if (item.bottlingId) {
+                            const allBottling = Storage.get('bottlingRecords') || [];
+                            const oldBIdx = allBottling.findIndex(b => b.id === item.bottlingId);
+                            if (oldBIdx !== -1) {
+                                allBottling[oldBIdx]._soldCount = (allBottling[oldBIdx]._soldCount || 0) + item.quantity;
+                                Storage.set('bottlingRecords', allBottling);
+                            }
+                        }
                     }
                     return;
+                }
+                const allBottling = Storage.get('bottlingRecords') || [];
+                const newBIdx = allBottling.findIndex(b => b.id === newBottlingId);
+                if (newBIdx !== -1) {
+                    allBottling[newBIdx]._soldCount = (allBottling[newBIdx]._soldCount || 0) + quantity;
+                    Storage.set('bottlingRecords', allBottling);
                 }
             }
 
@@ -1338,6 +1476,7 @@ const SalesPage = {
                 customerName: formData.get('customerName'),
                 customerPhone: formData.get('customerPhone'),
                 productId: productId,
+                bottlingId: newBottlingId,
                 productName: product ? product.name : '',
                 spec: product ? product.spec : '',
                 quantity: quantity,
@@ -1385,10 +1524,28 @@ const SalesPage = {
         const item = Storage.findById('salesRecords', id);
         if (!item) return;
 
-        if (!Utils.confirm('确定要删除这条销售记录吗？删除后库存将自动恢复。')) return;
+        const willRestoreStock = item.stockDeducted && item.productId && !item.stockRestored;
+        const confirmText = willRestoreStock 
+            ? `确定要删除这条销售记录吗？删除后将自动恢复 ${item.quantity} 瓶库存。`
+            : '确定要删除这条销售记录吗？';
 
-        if (item.stockDeducted && item.productId) {
-            Storage.updateProductStock(item.productId, item.quantity, `销售删除回滚 - 订单 ${item.orderNo}`);
+        if (!Utils.confirm(confirmText)) return;
+
+        if (willRestoreStock) {
+            Storage.updateProductStock(
+                item.productId, 
+                item.quantity, 
+                `销售删除回滚 - 订单 ${item.orderNo}`
+            );
+        }
+        
+        if (item.bottlingId && !item.stockRestored) {
+            const allBottling = Storage.get('bottlingRecords') || [];
+            const bIdx = allBottling.findIndex(b => b.id === item.bottlingId);
+            if (bIdx !== -1) {
+                allBottling[bIdx]._soldCount = Math.max(0, (allBottling[bIdx]._soldCount || 0) - item.quantity);
+                Storage.set('bottlingRecords', allBottling);
+            }
         }
 
         Storage.delete('salesRecords', id);
@@ -1452,18 +1609,30 @@ const SalesPage = {
                 return;
             }
 
+            const initialStock = parseInt(formData.get('stock')) || 0;
             const data = {
                 name: name,
                 spec: formData.get('spec'),
                 price: price,
-                stock: parseInt(formData.get('stock')) || 0,
+                stock: 0,
                 description: formData.get('description')
             };
 
-            Storage.add('products', data);
+            const newProduct = Storage.add('products', data);
+            
+            if (initialStock > 0 && newProduct && newProduct.id) {
+                Storage.adjustProductStock(
+                    newProduct.id, 
+                    initialStock, 
+                    '初始库存设置', 
+                    '系统'
+                );
+            }
+            
             Utils.hideModal();
             Utils.toast('产品添加成功', 'success');
             this.refresh();
+            App.updateSidebarStats();
         });
     },
 
@@ -1525,18 +1694,34 @@ const SalesPage = {
                 return;
             }
 
+            const newStockValue = parseInt(formData.get('stock')) || 0;
+            const oldStockValue = product.stock || 0;
+            const stockChanged = newStockValue !== oldStockValue;
+
             const data = {
                 name: name,
                 spec: formData.get('spec'),
                 price: price,
-                stock: parseInt(formData.get('stock')) || 0,
                 description: formData.get('description')
             };
 
-            Storage.update('products', id, data);
+            if (!stockChanged) {
+                data.stock = oldStockValue;
+                Storage.update('products', id, data);
+            } else {
+                Storage.update('products', id, data);
+                Storage.adjustProductStock(
+                    id,
+                    newStockValue,
+                    '编辑产品改库存',
+                    '管理员'
+                );
+            }
+
             Utils.hideModal();
-            Utils.toast('更新成功', 'success');
+            Utils.toast(stockChanged ? '更新成功，库存变化已记录流水' : '更新成功', 'success');
             this.refresh();
+            App.updateSidebarStats();
         });
     },
 

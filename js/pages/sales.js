@@ -1217,14 +1217,15 @@ const SalesPage = {
                 );
                 if (restoreResult.success) {
                     stockRestored = true;
-                    if (sale.bottlingId) {
-                        const allBottling = Storage.get('bottlingRecords') || [];
-                        const bIdx = allBottling.findIndex(b => b.id === sale.bottlingId);
-                        if (bIdx !== -1) {
-                            allBottling[bIdx]._soldCount = Math.max(0, (allBottling[bIdx]._soldCount || 0) - sale.quantity);
-                            Storage.set('bottlingRecords', allBottling);
-                        }
-                    }
+                }
+            }
+
+            if (sale.bottlingId && !sale.stockRestored) {
+                const allBottling = Storage.get('bottlingRecords') || [];
+                const bIdx = allBottling.findIndex(b => b.id === sale.bottlingId);
+                if (bIdx !== -1) {
+                    allBottling[bIdx]._soldCount = Math.max(0, (allBottling[bIdx]._soldCount || 0) - sale.quantity);
+                    Storage.set('bottlingRecords', allBottling);
                 }
             }
 
@@ -1425,49 +1426,80 @@ const SalesPage = {
                 return;
             }
 
+            const allBottling = Storage.get('bottlingRecords') || [];
+            const newBottling = allBottling.find(b => b.id === newBottlingId);
+            if (newBottling) {
+                const available = newBottling.bottleCount - (newBottling._soldCount || 0);
+                if (newBottlingId === item.bottlingId) {
+                    if (quantity > (available + item.quantity)) {
+                        Utils.showFieldError('saleQuantity', `所选批次剩余可售 ${available + item.quantity} 瓶，当前数量 ${quantity} 瓶超过限制`);
+                        return;
+                    }
+                } else {
+                    if (quantity > available) {
+                        Utils.showFieldError('saleQuantity', `所选批次剩余可售 ${available} 瓶，当前数量 ${quantity} 瓶超过限制`);
+                        return;
+                    }
+                }
+            }
+
             const oldStockDeducted = item.stockDeducted;
             const newStockDeducted = newStatus === 'completed';
             const productChanged = productId !== item.productId;
             const quantityChanged = quantity !== item.quantity;
             const bottlingChanged = newBottlingId !== item.bottlingId;
 
-            if (oldStockDeducted && (productChanged || quantityChanged || !newStockDeducted)) {
-                const rollbackResult = Storage.updateProductStock(item.productId, item.quantity, `销售回滚 - 订单 ${item.orderNo}`);
-                if (!rollbackResult.success) {
-                    Utils.toast('库存回滚失败', 'error');
-                    return;
-                }
+            const onlyBottlingChanged = bottlingChanged && !productChanged && !quantityChanged && oldStockDeducted && newStockDeducted;
+            
+            if (onlyBottlingChanged) {
                 if (item.bottlingId) {
-                    const allBottling = Storage.get('bottlingRecords') || [];
                     const oldBIdx = allBottling.findIndex(b => b.id === item.bottlingId);
                     if (oldBIdx !== -1) {
                         allBottling[oldBIdx]._soldCount = Math.max(0, (allBottling[oldBIdx]._soldCount || 0) - item.quantity);
-                        Storage.set('bottlingRecords', allBottling);
                     }
                 }
-            }
-
-            if (newStockDeducted && (!oldStockDeducted || productChanged || quantityChanged || bottlingChanged)) {
-                const deductResult = Storage.updateProductStock(productId, -quantity, `销售出库 - 订单 ${item.orderNo}`);
-                if (!deductResult.success) {
-                    Utils.showFieldError('saleQuantity', deductResult.message || '库存不足');
-                    if (oldStockDeducted && (productChanged || quantityChanged)) {
-                        Storage.updateProductStock(item.productId, -item.quantity, `销售恢复 - 订单 ${item.orderNo}`);
-                        if (item.bottlingId) {
-                            const allBottling = Storage.get('bottlingRecords') || [];
-                            const oldBIdx = allBottling.findIndex(b => b.id === item.bottlingId);
-                            if (oldBIdx !== -1) {
-                                allBottling[oldBIdx]._soldCount = (allBottling[oldBIdx]._soldCount || 0) + item.quantity;
-                                Storage.set('bottlingRecords', allBottling);
-                            }
-                        }
-                    }
-                    return;
-                }
-                const allBottling = Storage.get('bottlingRecords') || [];
                 const newBIdx = allBottling.findIndex(b => b.id === newBottlingId);
                 if (newBIdx !== -1) {
                     allBottling[newBIdx]._soldCount = (allBottling[newBIdx]._soldCount || 0) + quantity;
+                }
+                Storage.set('bottlingRecords', allBottling);
+            } else {
+                if (oldStockDeducted && (productChanged || quantityChanged || !newStockDeducted)) {
+                    const rollbackResult = Storage.updateProductStock(item.productId, item.quantity, `销售回滚 - 订单 ${item.orderNo}`);
+                    if (!rollbackResult.success) {
+                        Utils.toast('库存回滚失败', 'error');
+                        return;
+                    }
+                    if (item.bottlingId) {
+                        const oldBIdx = allBottling.findIndex(b => b.id === item.bottlingId);
+                        if (oldBIdx !== -1) {
+                            allBottling[oldBIdx]._soldCount = Math.max(0, (allBottling[oldBIdx]._soldCount || 0) - item.quantity);
+                        }
+                    }
+                }
+
+                if (newStockDeducted && (!oldStockDeducted || productChanged || quantityChanged || bottlingChanged)) {
+                    const deductResult = Storage.updateProductStock(productId, -quantity, `销售出库 - 订单 ${item.orderNo}`);
+                    if (!deductResult.success) {
+                        Utils.showFieldError('saleQuantity', deductResult.message || '库存不足');
+                        if (oldStockDeducted && (productChanged || quantityChanged)) {
+                            Storage.updateProductStock(item.productId, -item.quantity, `销售恢复 - 订单 ${item.orderNo}`);
+                            if (item.bottlingId) {
+                                const oldBIdx = allBottling.findIndex(b => b.id === item.bottlingId);
+                                if (oldBIdx !== -1) {
+                                    allBottling[oldBIdx]._soldCount = (allBottling[oldBIdx]._soldCount || 0) + item.quantity;
+                                    Storage.set('bottlingRecords', allBottling);
+                                }
+                            }
+                        }
+                        return;
+                    }
+                    const newBIdx = allBottling.findIndex(b => b.id === newBottlingId);
+                    if (newBIdx !== -1) {
+                        allBottling[newBIdx]._soldCount = (allBottling[newBIdx]._soldCount || 0) + quantity;
+                    }
+                    Storage.set('bottlingRecords', allBottling);
+                } else if (bottlingChanged && oldStockDeducted && newStockDeducted) {
                     Storage.set('bottlingRecords', allBottling);
                 }
             }

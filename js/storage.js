@@ -526,6 +526,21 @@ const Storage = {
                     status: 'completed',
                     createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
                     remark: '第二批灌装'
+                },
+                {
+                    id: 'bottling_004',
+                    batchNo: 'GZ202401004',
+                    refiningId: 'refining_001',
+                    oilWeight: 55,
+                    bottleSpec: '500ml',
+                    bottleCount: 100,
+                    _soldCount: 0,
+                    labelType: '精品山茶油',
+                    productId: 'prod_001',
+                    operator: '李师傅',
+                    status: 'completed',
+                    createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
+                    remark: '新批次灌装，同产品500ml'
                 }
             ];
             this.set('bottlingRecords', mockBottling);

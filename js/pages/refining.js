@@ -844,24 +844,34 @@ const RefiningPage = {
 
         const chain = Storage.getBatchChain('bottlingRecords', id);
         const refining = chain.source;
-        const traceData = Storage.getFullBatchChainFromBottling(id);
-        const fullChain = traceData.chain || [];
+        const fullChain = Storage.getFullBatchChainFromBottling(id) || [];
 
         const chainHtml = fullChain.length === 0
             ? `<div class="empty-state" style="padding: 20px;"><div class="empty-state-icon">🔗</div><div class="empty-state-text">暂无批次追溯信息</div></div>`
             : fullChain.map((step, idx) => {
                 const weightFieldMap = {
-                    bottlingRecords: 'bottledQuantity',
+                    bottlingRecords: 'bottleCount',
                     refiningRecords: 'refinedOilWeight',
                     filteringRecords: 'filteredOilWeight',
                     pressingRecords: 'crudeOilWeight',
                     roastingRecords: 'kernelWeight',
                     shellingRecords: 'kernelWeight',
-                    dryingRecords: 'driedWeight',
+                    dryingRecords: 'seedWeight',
                     purchases: 'weight'
                 };
+                const unitMap = {
+                    bottlingRecords: '瓶',
+                    refiningRecords: 'kg',
+                    filteringRecords: 'kg',
+                    pressingRecords: 'kg',
+                    roastingRecords: 'kg',
+                    shellingRecords: 'kg',
+                    dryingRecords: 'kg',
+                    purchases: 'kg'
+                };
                 const wf = weightFieldMap[step.type] || 'weight';
-                const weight = step.data[wf] || step.data.weight || 0;
+                const unit = unitMap[step.type] || 'kg';
+                const qty = step.data[wf] || step.data.weight || 0;
                 const statusMap = {
                     completed: '<span class="badge badge-success">已完成</span>',
                     processing: '<span class="badge badge-warning">进行中</span>',
@@ -883,7 +893,7 @@ const RefiningPage = {
                                 <div style="font-size: 13px; color: #666; margin-bottom: 4px;">
                                     批次号：<strong>${step.batchNo || '-'}</strong>
                                 </div>
-                                ${weight ? `<div style="font-size: 13px; color: #4caf50;">重量：${weight} kg</div>` : ''}
+                                ${qty ? `<div style="font-size: 13px; color: #4caf50;">数量：${qty} ${unit}</div>` : ''}
                             </div>
                         </div>
                     </div>
